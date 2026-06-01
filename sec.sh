@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ======================================================================
 #          LINUX SERVER SECURITY TOOLKIT (Miner & Malware Scanner)
-#                 Compiled production build: 2026-06-01 15:05:33
+#                 Compiled production build: 2026-06-01 15:08:59
 #                 Source Architecture: MVC Modular / Domain-Driven
 # ======================================================================
 set -o pipefail
@@ -1811,12 +1811,16 @@ EOF
 
 # Automated Cron Alert scan (Silent, non-interactive execution)
 run_cron_scan() {
+    local is_test="${1:-false}"
+    
     # Initialize configuration from persistent OS directory
     [[ -f "/etc/sec-toolkit/config.env" ]] && source "/etc/sec-toolkit/config.env" 2>/dev/null
     
-    if [[ "${ENABLE_LARK:-}" != "true" || -z "${LARK_WEBHOOK_URL:-}" ]]; then
-        log_message "INFO" "Cron scan executed, but Lark notifications are disabled or not configured."
-        return
+    if [[ "$is_test" != "true" ]]; then
+        if [[ "${ENABLE_LARK:-}" != "true" || -z "${LARK_WEBHOOK_URL:-}" ]]; then
+            log_message "INFO" "Cron scan executed, but Lark notifications are disabled or not configured."
+            return
+        fi
     fi
     
     local audit_text=""
@@ -1995,7 +1999,7 @@ run_cron_scan() {
     fi
     
     # Send Lark Interactive Card
-    send_lark_notification "$alert_title" "$audit_text" "$alert_level"
+    send_lark_notification "$alert_title" "$audit_text" "$alert_level" "$is_test"
 }
 
 # Unified Notification & Automated Cron Audits settings manager
