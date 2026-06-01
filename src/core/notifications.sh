@@ -81,6 +81,39 @@ run_cron_scan() {
         ssh_root_tag="\`$ssh_root_login\` ⚠️ (HIGH RISK)"
     fi
     
+    # Fast SUID/SGID Backdoor scan in writable paths (maxdepth 3)
+    local suid_count=0
+    local suid_list=""
+    for target_dir in "/tmp" "/var/tmp" "/dev/shm"; do
+        if [[ -d "$target_dir" ]]; then
+            while read -r suid_path; do
+                [[ -z "$suid_path" || ! -f "$suid_path" ]] && continue
+                suid_count=$((suid_count + 1))
+                local s_owner=$(stat -c "%U:%G" "$suid_path" 2>/dev/null)
+                suid_list+="  ⚠️ SUID file: \`$suid_path\` (Owner: \`$s_owner\`)${BR}"
+            done < <(find "$target_dir" -maxdepth 3 -type f \( -perm -4000 -o -perm -2000 \) 2>/dev/null)
+        fi
+    done
+    local suid_tag="🟢 Clean (0 backdoors)"
+    [[ "$suid_count" -gt 0 ]] && suid_tag="🔴 $suid_count DETECTED! ⚠️"
+
+    # Fast Log Integrity Check (auth.log / wtmp / lastlog truncation anomalies)
+    local log_tampered=0
+    local log_anomalies_list=""
+    local logs_check=("/var/log/wtmp" "/var/log/lastlog" "/var/log/auth.log" "/var/log/secure")
+    for log_p in "${logs_check[@]}"; do
+        if [[ -f "$log_p" ]]; then
+            local f_sz
+            f_sz=$(stat -c "%s" "$log_p" 2>/dev/null)
+            if [[ "$f_sz" -eq 0 ]]; then
+                log_tampered=1
+                log_anomalies_list+="  ⚠️ Truncated (0 bytes): \`$log_p\`${BR}"
+            fi
+        fi
+    done
+    local log_tag="🟢 Intact"
+    [[ "$log_tampered" -eq 1 ]] && log_tag="🔴 TAMPERED! ⚠️"
+    
     local logged_users
     logged_users=$(who 2>/dev/null | awk '{print $1" ("$2" "$5")"}' | tr '\n' ',' | sed 's/,$//')
     [[ -z "$logged_users" ]] && logged_users="None (No active sessions)"
@@ -89,6 +122,8 @@ run_cron_scan() {
     audit_text+="├─ UFW Firewall Status  : $ufw_tag${BR}"
     audit_text+="├─ SSH Configured Port  : \`$ssh_port\`${BR}"
     audit_text+="├─ SSH Permit Root Login: $ssh_root_tag${BR}"
+    audit_text+="├─ Log Integrity Status : $log_tag${BR}"
+    audit_text+="├─ SUID Backdoors Temp  : $suid_tag${BR}"
     audit_text+="└─ Active Logged-in Users: \`$logged_users\`${BR}${BR}"
     
     # 3. Docker Running Containers & Resources
@@ -168,6 +203,13 @@ run_cron_scan() {
         audit_text+="**🌐 EXPOSED DATABASE PORTS (UFW BYPASS):**${BR}$dangerous_ports${BR}"
     fi
     
+    if [[ -n "$suid_list" ]]; then
+        audit_text+="**🚨 CRITICAL PRIVILEGE ESCALATION THREATS (SUID):**${BR}$suid_list${BR}"
+    fi
+    if [[ -n "$log_anomalies_list" ]]; then
+        audit_text+="**🚨 SYSTEM LOG INTEGRITY VIOLATIONS (TAMPERING):**${BR}$log_anomalies_list${BR}"
+    fi
+    
     # 4. Top 5 CPU Processes
     local susp_proc=""
     while read -r pid user cpu comm; do
@@ -215,7 +257,7 @@ run_cron_scan() {
     local alert_level="success"
     local alert_title="Daily Server Health: ALL SYSTEMS NORMAL"
     
-    if [[ -n "$socket_mounts" || -n "$dangerous_ports" || -n "$stratum_conns" ]]; then
+    if [[ -n "$socket_mounts" || -n "$dangerous_ports" || -n "$stratum_conns" || "$suid_count" -gt 0 || "$log_tampered" -eq 1 ]]; then
         alert_level="danger"
         alert_title="VPS SECURITY ALERT: Critical Threats Detected!"
     elif [[ -n "$susp_proc" && "$susp_proc" == *"🔥 [SUSPICIOUS]"* ]]; then

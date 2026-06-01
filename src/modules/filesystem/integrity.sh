@@ -41,4 +41,68 @@ check_system_integrity() {
     if [[ "$hijacked_tools" -eq 0 ]]; then
         print_status "success" "System tools (ps, top, ss, lsof) appear to be clean binary executables."
     fi
-}
+
+    # 3. Check for Log Tampering / Truncation (Common post-exploitation covering tracks)
+    echo -e "\n${C_BWHITE}--- Auditing System Logs & History Integrity ---${C_RESET}"
+    local logs_to_check=(
+        "/var/log/wtmp"
+        "/var/log/btmp"
+        "/var/log/lastlog"
+        "/var/log/auth.log"
+        "/var/log/secure"
+        "/var/log/syslog"
+    )
+    local log_anomalies=0
+    for log_path in "${logs_to_check[@]}"; do
+        # Handle auth logs mapping
+        if [[ "$log_path" == "/var/log/auth.log" && ! -f "/var/log/auth.log" && ! -f "/var/log/secure" ]]; then
+            print_status "danger" "Authentication log is completely MISSING! (Neither auth.log nor secure exists)"
+            log_anomalies=$((log_anomalies + 1))
+            continue
+        elif [[ ! -f "$log_path" ]]; then
+            # Skip if it is not expected for the distro
+            if [[ "$log_path" == "/var/log/auth.log" || "$log_path" == "/var/log/secure" ]]; then
+                continue
+            fi
+            print_status "warn" "System log file '$log_path' is missing from disk."
+            continue
+        fi
+
+        # Check if log was truncated to 0 bytes
+        local file_size
+        file_size=$(stat -c "%s" "$log_path" 2>/dev/null)
+        if [[ "$file_size" -eq 0 ]]; then
+            # Failed logins (btmp) can naturally be 0 bytes if no failures occurred
+            if [[ "$log_path" != "/var/log/btmp" ]]; then
+                log_anomalies=$((log_anomalies + 1))
+                print_status "danger" "CRITICAL TAMPERING WARNING: Log file '$log_path' is empty (0 bytes)!"
+                print_status "bullet" "Attackers often truncate system logs to erase trace logs of their operations."
+                log_message "ALERT" "Tampering detected: $log_path was truncated to 0 bytes"
+            fi
+        fi
+    done
+    if [[ "$log_anomalies" -eq 0 ]]; then
+        print_status "success" "System authentication and session logs are active and intact."
+    fi
+
+    # 4. Check for SUID/SGID backdoor binaries in globally writable paths
+    echo -e "\n${C_BWHITE}--- Auditing Writable Paths for SUID/SGID Backdoors ---${C_RESET}"
+    local suid_files=0
+    for target_dir in "/tmp" "/var/tmp" "/dev/shm" "/run/user"; do
+        if [[ -d "$target_dir" ]]; then
+            while read -r suid_path; do
+                [[ -z "$suid_path" || ! -f "$suid_path" ]] && continue
+                suid_files=$((suid_files + 1))
+                local owner perms
+                owner=$(stat -c "%U:%G" "$suid_path" 2>/dev/null)
+                perms=$(stat -c "%a" "$suid_path" 2>/dev/null)
+                print_status "danger" "SUID/SGID BINARY FOUND: '$suid_path' (Owner: $owner, Perms: $perms)"
+                print_status "bullet" "CRITICAL RATIONALE: Writable temporary paths should NEVER host SUID executable files!"
+                log_message "ALERT" "SUID/SGID backdoor detected: $suid_path ($owner, $perms)"
+                send_lark_notification "SUID/SGID Privilege Escalation Backdoor Detected" "Found SUID/SGID file: '$suid_path' in writable storage ($target_dir). Owner: $owner, Perms: $perms. This allows local privilege escalation!" "danger"
+            done < <(find "$target_dir" -type f \( -perm -4000 -o -perm -2000 \) 2>/dev/null)
+        fi
+    done
+    if [[ "$suid_files" -eq 0 ]]; then
+        print_status "success" "No SUID/SGID privilege escalation backdoors found in temporary directories."
+    fi

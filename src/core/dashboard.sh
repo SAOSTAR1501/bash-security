@@ -183,10 +183,45 @@ live_security_dashboard() {
             stratum_status="${stratum_count} ACTIVE!"
             stratum_color="$C_BRED"
         fi
+
+        # Fast SUID/SGID Backdoors scan (maxdepth 2 to avoid lags)
+        local suid_count=0
+        for target_dir in "/tmp" "/var/tmp" "/dev/shm"; do
+            if [[ -d "$target_dir" ]]; then
+                suid_count=$((suid_count + $(find "$target_dir" -maxdepth 2 -type f \( -perm -4000 -o -perm -2000 \) 2>/dev/null | wc -l)))
+            fi
+        done
+        local suid_status="0 (SECURE)"
+        local suid_color="$C_BGREEN"
+        if [[ "$suid_count" -gt 0 ]]; then
+            suid_status="${suid_count} DETECTED!"
+            suid_color="$C_BRED"
+        fi
+
+        # Fast Log Integrity Check (auth.log / wtmp / lastlog truncation anomalies)
+        local log_tampered=0
+        local logs_check=("/var/log/wtmp" "/var/log/lastlog" "/var/log/auth.log" "/var/log/secure")
+        for log_p in "${logs_check[@]}"; do
+            if [[ -f "$log_p" ]]; then
+                local f_sz
+                f_sz=$(stat -c "%s" "$log_p" 2>/dev/null)
+                if [[ "$f_sz" -eq 0 && "$log_p" != "/var/log/btmp" ]]; then
+                    log_tampered=1
+                    break
+                fi
+            fi
+        done
+        local log_status="SECURE"
+        local log_color="$C_BGREEN"
+        if [[ "$log_tampered" -eq 1 ]]; then
+            log_status="TAMPERED!"
+            log_color="$C_BRED"
+        fi
         
         # Display side-by-side or listed indicators
         printf "   * Tường lửa UFW    : ${ufw_color}%-10s${C_RESET} | * Lỗ hổng Cổng Docker   : ${exposed_color}%-15s${C_RESET}\n" "$ufw_live" "$exposed_status"
         printf "   * Docker Escapes   : ${sock_color}%-10s${C_RESET} | * Kết nối Pool Đào Coin : ${stratum_color}%-15s${C_RESET}\n" "$sock_status" "$stratum_status"
+        printf "   * SUID Backdoors   : ${suid_color}%-10s${C_RESET} | * Nhật ký Hệ thống      : ${log_color}%-15s${C_RESET}\n" "$suid_status" "$log_status"
         
         # Logged-in Users list
         local active_users=$(who 2>/dev/null | awk '{print $1" ("$2")"}' | tr '\n' ',' | sed 's/,$//')
