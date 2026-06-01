@@ -16,6 +16,7 @@ $files = @(
     "src/modules/system/sys_info.sh",
     "src/modules/system/cpu_process.sh",
     "src/modules/network/connections.sh",
+    "src/modules/network/firewall.sh",
     "src/modules/filesystem/writable_paths.sh",
     "src/modules/filesystem/integrity.sh",
     "src/modules/persistence/entries.sh",

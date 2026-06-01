@@ -11,6 +11,7 @@ run_full_scan() {
     display_system_info
     check_cpu_processes
     check_network_connections
+    check_ports_firewall
     check_globally_writeable
     check_persistence
     check_system_integrity
@@ -85,12 +86,13 @@ main_menu() {
         echo -e " [1]  Run Full System Security Scan (Unified Report)"
         echo -e " [2]  Deep Process Investigator (Freeze / Analyze / Kill)"
         echo -e " [3]  Inspect Network Connections & Stratum Pools"
-        echo -e " [4]  Scan Temp Writable Folders (/tmp, /dev/shm) for Signatures"
-        echo -e " [5]  Check System Persistence (Cron Jobs, Systemd Services)"
-        echo -e " [6]  Verify Rootkits & ld.so.preload"
-        echo -e " [7]  Audit Identity Credentials & SSH Keys (Users / Keys / Leaks)"
-        echo -e " [8]  Generate Comprehensive Text Audit Report"
-        echo -e " [9]  Update Tool (Reset & Pull from GitHub)"
+        echo -e " [4]  Scan Ports, UFW Firewall & Docker Exposures"
+        echo -e " [5]  Scan Temp Writable Folders (/tmp, /dev/shm) for Signatures"
+        echo -e " [6]  Check System Persistence (Cron Jobs, Systemd Services)"
+        echo -e " [7]  Verify Rootkits & ld.so.preload"
+        echo -e " [8]  Audit Identity Credentials & SSH Keys (Users / Keys / Leaks)"
+        echo -e " [9]  Generate Comprehensive Text Audit Report"
+        echo -e " [10] Update Tool (Reset & Pull from GitHub)"
         echo -e " [0]  Exit Tool"
         echo -e "${C_CYAN}======================================================================${C_RESET}"
         echo -n "Select option: "
@@ -112,22 +114,28 @@ main_menu() {
             4)
                 clear_screen
                 print_header
-                check_globally_writeable
+                check_ports_firewall
                 press_any_key
                 ;;
             5)
                 clear_screen
                 print_header
-                check_persistence
+                check_globally_writeable
                 press_any_key
                 ;;
             6)
                 clear_screen
                 print_header
-                check_system_integrity
+                check_persistence
                 press_any_key
                 ;;
             7)
+                clear_screen
+                print_header
+                check_system_integrity
+                press_any_key
+                ;;
+            8)
                 clear_screen
                 print_header
                 audit_system_users
@@ -135,12 +143,12 @@ main_menu() {
                 audit_ssh_keys
                 press_any_key
                 ;;
-            8)
+            9)
                 clear_screen
                 print_header
                 generate_report
                 ;;
-            9)
+            10)
                 clear_screen
                 print_header
                 update_tool
@@ -151,7 +159,7 @@ main_menu() {
                 exit 0
                 ;;
             *)
-                print_status "danger" "Invalid choice. Please select 0-9."
+                print_status "danger" "Invalid choice. Please select 0-10."
                 sleep 1
                 ;;
         esac
