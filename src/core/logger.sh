@@ -3,9 +3,10 @@
 # ======================================================================
 
 LOG_FILE="/var/log/sec_toolkit.log"
-CONF_FILE="/etc/sec_toolkit.conf"
+CONF_DIR="/etc/sec-toolkit"
+CONF_FILE="${CONF_DIR}/config.env"
 
-# Load global configuration
+# Load global configuration (Survivable across Git updates)
 if [[ -f "$CONF_FILE" ]]; then
     source "$CONF_FILE" 2>/dev/null
 fi
@@ -24,9 +25,10 @@ send_lark_notification() {
     local title="$1"
     local text="$2"
     local level="${3:-info}" # info, success, warn, danger
-    local webhook_url="${LARK_WEBHOOK_URL:-}"
     
-    if [[ -n "$webhook_url" ]]; then
+    # Only execute if ENABLE_LARK is true and webhook URL is configured
+    if [[ "${ENABLE_LARK:-}" == "true" && -n "${LARK_WEBHOOK_URL:-}" ]]; then
+        local webhook_url="$LARK_WEBHOOK_URL"
         local header_color="blue"
         case "$level" in
             "danger")  header_color="red" ;;

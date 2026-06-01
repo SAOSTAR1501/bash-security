@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ======================================================================
 #          LINUX SERVER SECURITY TOOLKIT (Miner & Malware Scanner)
-#                 Compiled production build: 2026-06-01 14:12:38
+#                 Compiled production build: 2026-06-01 14:23:54
 #                 Source Architecture: MVC Modular / Domain-Driven
 # ======================================================================
 set -o pipefail
@@ -52,9 +52,10 @@ BG_BLUE="\e[44m"
 # ======================================================================
 
 LOG_FILE="/var/log/sec_toolkit.log"
-CONF_FILE="/etc/sec_toolkit.conf"
+CONF_DIR="/etc/sec-toolkit"
+CONF_FILE="${CONF_DIR}/config.env"
 
-# Load global configuration
+# Load global configuration (Survivable across Git updates)
 if [[ -f "$CONF_FILE" ]]; then
     source "$CONF_FILE" 2>/dev/null
 fi
@@ -73,9 +74,10 @@ send_lark_notification() {
     local title="$1"
     local text="$2"
     local level="${3:-info}" # info, success, warn, danger
-    local webhook_url="${LARK_WEBHOOK_URL:-}"
     
-    if [[ -n "$webhook_url" ]]; then
+    # Only execute if ENABLE_LARK is true and webhook URL is configured
+    if [[ "${ENABLE_LARK:-}" == "true" && -n "${LARK_WEBHOOK_URL:-}" ]]; then
+        local webhook_url="$LARK_WEBHOOK_URL"
         local header_color="blue"
         case "$level" in
             "danger")  header_color="red" ;;
@@ -1733,13 +1735,27 @@ generate_report() {
     press_any_key
 }
 
+# Save configuration variables persistently (Survivable across Git updates)
+save_config() {
+    if [[ ! -d "/etc/sec-toolkit" ]]; then
+        mkdir -p "/etc/sec-toolkit" 2>/dev/null
+    fi
+    cat <<EOF > "/etc/sec-toolkit/config.env"
+ENABLE_LARK="${ENABLE_LARK:-false}"
+LARK_WEBHOOK_URL="${LARK_WEBHOOK_URL:-}"
+ENABLE_CRON="${ENABLE_CRON:-false}"
+CRON_HOURS="${CRON_HOURS:-11,17,22}"
+EOF
+    chmod 600 "/etc/sec-toolkit/config.env" 2>/dev/null
+}
+
 # Automated Cron Alert scan (Silent, non-interactive execution)
 run_cron_scan() {
-    # Initialize configuration
-    [[ -f "/etc/sec_toolkit.conf" ]] && source "/etc/sec_toolkit.conf" 2>/dev/null
+    # Initialize configuration from persistent OS directory
+    [[ -f "/etc/sec-toolkit/config.env" ]] && source "/etc/sec-toolkit/config.env" 2>/dev/null
     
-    if [[ -z "${LARK_WEBHOOK_URL:-}" ]]; then
-        log_message "ERROR" "Cron scan aborted: Lark Webhook URL is not configured."
+    if [[ "${ENABLE_LARK:-}" != "true" || -z "${LARK_WEBHOOK_URL:-}" ]]; then
+        log_message "INFO" "Cron scan executed, but Lark notifications are disabled or not configured."
         return
     fi
     
@@ -1844,98 +1860,134 @@ run_cron_scan() {
     send_lark_notification "$alert_title" "$audit_text" "$alert_level"
 }
 
-# Schedule Automated Cron Notifications Wizard
-configure_cronjob() {
-    clear_screen
-    print_header
-    echo -e "${C_BMAGENTA}        >>> SCHEDULE AUTOMATED CRON NOTIFICATIONS <<<${C_RESET}\n"
-    
-    local script_path
-    script_path=$(realpath "$0" 2>/dev/null)
-    [[ -z "$script_path" ]] && script_path="/usr/local/bin/sec.sh"
-    
-    echo -e "This wizard configures a system cron job to run silently at:"
-    echo -e "  * ${C_BCYAN}11:00 AM${C_RESET} (Daily Security Audit)"
-    echo -e "  * ${C_BCYAN}05:00 PM${C_RESET} (Daily Security Audit)"
-    echo -e "  * ${C_BCYAN}10:00 PM${C_RESET} (Daily Security Audit)"
-    echo -e "And sends a structured Lark interactive card with security metrics and warnings."
-    
-    echo -e "\nScript path to execute: ${C_CYAN}$script_path${C_RESET}"
-    echo -e "\nChoose action:"
-    echo -e "  [1] ${C_BGREEN}Install/Activate Automated Cron Alert (11AM, 5PM, 10PM)${C_RESET}"
-    echo -e "  [2] ${C_BRED}Uninstall/Deactivate Cron Alert${C_RESET}"
-    echo -e "  [0] Go back"
-    echo -n "Select action [1-2, or 0]: "
-    read -r cron_choice
-    
-    case "$cron_choice" in
-        1)
-            # Remove any existing custom cron lines for sec.sh
-            (crontab -l 2>/dev/null | grep -v "sec.sh") | crontab -
-            
-            # Install new cronjob
-            (crontab -l 2>/dev/null; echo "0 11,17,22 * * * bash $script_path --cron >/dev/null 2>&1") | crontab -
-            
-            print_status "success" "Cron job scheduled successfully!"
-            print_status "bullet" "Scheduled to run at 11:00, 17:00, 22:00 daily."
-            print_status "bullet" "Verify with: crontab -l"
-            ;;
-        2)
-            # Uninstall
-            (crontab -l 2>/dev/null | grep -v "sec.sh") | crontab -
-            print_status "success" "Cron job uninstalled successfully."
-            ;;
-        0|*)
-            print_status "info" "No changes made."
-            ;;
-    esac
-    press_any_key
-}
-
-# Lark Alert Webhook Configuration Manager
-configure_lark_webhook() {
-    clear_screen
-    print_header
-    echo -e "${C_BMAGENTA}            >>> LARK ALERT WEBHOOK CONFIGURATION <<<${C_RESET}\n"
-    
-    local current_webhook="${LARK_WEBHOOK_URL:-}"
-    if [[ -n "$current_webhook" ]]; then
-        echo -e "Current Webhook URL: ${C_BGREEN}${current_webhook:0:60}...${C_RESET}\n"
-    else
-        echo -e "Current Webhook URL: ${C_BRED}[NOT CONFIGURED]${C_RESET}\n"
-    fi
-    
-    echo -e "Lark Webhooks allow the toolkit to send real-time security alerts"
-    echo -e "directly to your Lark or Feishu chat groups when threats are detected."
-    echo -e "\nEnter new Lark Webhook URL (or press Enter to keep current, type 'none' to clear):"
-    read -r new_webhook
-    
-    if [[ "$new_webhook" == "none" ]]; then
-        if [[ -f "/etc/sec_toolkit.conf" ]]; then
-            sed -i '/LARK_WEBHOOK_URL/d' /etc/sec_toolkit.conf 2>/dev/null
-        fi
-        LARK_WEBHOOK_URL=""
-        print_status "success" "Lark Webhook URL cleared successfully."
-    elif [[ -n "$new_webhook" ]]; then
-        if [[ ! -d "/etc" ]]; then
-            mkdir -p "/etc" 2>/dev/null
+# Unified Notification & Automated Cron Audits settings manager
+configure_notifications() {
+    while true; do
+        # Reload configuration
+        [[ -f "/etc/sec-toolkit/config.env" ]] && source "/etc/sec-toolkit/config.env" 2>/dev/null
+        
+        clear_screen
+        print_header
+        echo -e "${C_BMAGENTA}            >>> NOTIFICATION & ALERTS MANAGER <<<${C_RESET}\n"
+        
+        # Lark Alerts config status
+        if [[ "${ENABLE_LARK:-}" == "true" ]]; then
+            echo -e "Lark Notifications : ${C_BGREEN}[ENABLED]${C_RESET}"
+        else
+            echo -e "Lark Notifications : ${C_BRED}[DISABLED]${C_RESET}"
         fi
         
-        if [[ -f "/etc/sec_toolkit.conf" ]]; then
-            sed -i '/LARK_WEBHOOK_URL/d' /etc/sec_toolkit.conf 2>/dev/null
+        if [[ -n "${LARK_WEBHOOK_URL:-}" ]]; then
+            echo -e "Lark Webhook URL   : ${C_CYAN}${LARK_WEBHOOK_URL:0:60}...${C_RESET}"
+        else
+            echo -e "Lark Webhook URL   : ${C_GRAY}[NOT CONFIGURED]${C_RESET}"
         fi
-        echo "LARK_WEBHOOK_URL=\"$new_webhook\"" >> "/etc/sec_toolkit.conf"
-        chmod 600 "/etc/sec_toolkit.conf" 2>/dev/null
-        LARK_WEBHOOK_URL="$new_webhook"
         
-        print_status "success" "Lark Webhook URL saved successfully to /etc/sec_toolkit.conf"
+        echo -e "${C_GRAY}----------------------------------------------------------------------${C_RESET}"
         
-        # Send test notification
-        print_status "info" "Sending test notification to Lark..."
-        send_lark_notification "Test Alert" "Lark Webhook Alert System has been successfully configured on $(hostname)!"
-    fi
-    
-    press_any_key
+        # Cron Audits config status
+        if [[ "${ENABLE_CRON:-}" == "true" ]]; then
+            echo -e "Automated Audits   : ${C_BGREEN}[ENABLED]${C_RESET}"
+            echo -e "Audit Hours (Cron) : ${C_CYAN}${CRON_HOURS:-11,17,22} daily${C_RESET}"
+        else
+            echo -e "Automated Audits   : ${C_BRED}[DISABLED]${C_RESET}"
+        fi
+        
+        echo -e "${C_CYAN}======================================================================${C_RESET}"
+        echo -e "Settings Menu:"
+        echo -e "  [1] Toggle & Configure Lark Webhook Alerts"
+        echo -e "  [2] Toggle & Configure Automated Cron Audits"
+        echo -e "  [3] Send Test Notification to Lark"
+        echo -e "  [0] Back to Main Menu"
+        echo -e "${C_CYAN}======================================================================${C_RESET}"
+        echo -n "Select action [0-3]: "
+        read -r alert_choice
+        
+        case "$alert_choice" in
+            1)
+                echo -e "\nToggle Lark Notifications? (current: ${ENABLE_LARK:-false})"
+                echo -e "  [1] Enable Lark Notifications"
+                echo -e "  [2] Disable Lark Notifications"
+                echo -n "Choice: "
+                read -r lark_toggle
+                if [[ "$lark_toggle" == "1" ]]; then
+                    ENABLE_LARK="true"
+                    echo -e "\nEnter Lark Webhook URL (press Enter to keep current):"
+                    read -r temp_webhook
+                    if [[ -n "$temp_webhook" ]]; then
+                        LARK_WEBHOOK_URL="$temp_webhook"
+                    fi
+                elif [[ "$lark_toggle" == "2" ]]; then
+                    ENABLE_LARK="false"
+                fi
+                save_config
+                print_status "success" "Lark Notification settings updated."
+                sleep 1.5
+                ;;
+            2)
+                echo -e "\nToggle Automated Cron Audits? (current: ${ENABLE_CRON:-false})"
+                echo -e "  [1] Enable Cron Audits"
+                echo -e "  [2] Disable Cron Audits"
+                echo -n "Choice: "
+                read -r cron_toggle
+                if [[ "$cron_toggle" == "1" ]]; then
+                    ENABLE_CRON="true"
+                    echo -e "\nConfigure Audit Hours:"
+                    echo -e "  [1] Default Hours (11:00 AM, 5:00 PM, 10:00 PM)"
+                    echo -e "  [2] Custom Hours (Comma-separated, e.g. 9,15,21)"
+                    echo -n "Choice: "
+                    read -r hour_choice
+                    if [[ "$hour_choice" == "1" ]]; then
+                        CRON_HOURS="11,17,22"
+                    elif [[ "$hour_choice" == "2" ]]; then
+                        echo -n "Enter custom hours (0-23, comma-separated): "
+                        read -r temp_hours
+                        if [[ "$temp_hours" =~ ^[0-9,]+$ ]]; then
+                            CRON_HOURS="$temp_hours"
+                        else
+                            print_status "danger" "Invalid hours format. Using default: 11,17,22"
+                            CRON_HOURS="11,17,22"
+                        fi
+                    fi
+                    
+                    local script_path
+                    script_path=$(realpath "$0" 2>/dev/null)
+                    [[ -z "$script_path" ]] && script_path="/usr/local/bin/sec.sh"
+                    
+                    # Register/update cron rules
+                    (crontab -l 2>/dev/null | grep -v "sec.sh") | crontab -
+                    (crontab -l 2>/dev/null; echo "0 $CRON_HOURS * * * bash $script_path --cron >/dev/null 2>&1") | crontab -
+                    print_status "success" "Automated Audits cronjob activated successfully for hours: $CRON_HOURS"
+                elif [[ "$cron_toggle" == "2" ]]; then
+                    ENABLE_CRON="false"
+                    local script_path
+                    script_path=$(realpath "$0" 2>/dev/null)
+                    [[ -z "$script_path" ]] && script_path="/usr/local/bin/sec.sh"
+                    
+                    (crontab -l 2>/dev/null | grep -v "sec.sh") | crontab -
+                    print_status "success" "Automated Audits cronjob deactivated."
+                fi
+                save_config
+                sleep 1.5
+                ;;
+            3)
+                if [[ "${ENABLE_LARK:-}" == "true" && -n "${LARK_WEBHOOK_URL:-}" ]]; then
+                    print_status "info" "Sending test interactive card to Lark..."
+                    send_lark_notification "Lark Card Test Success" "Lark Alert Webhook is fully verified and connected to $(hostname)!" "success"
+                else
+                    print_status "danger" "Cannot send test. Lark Notifications are disabled or Webhook URL is missing."
+                fi
+                press_any_key
+                ;;
+            0)
+                break
+                ;;
+            *)
+                print_status "danger" "Invalid choice."
+                sleep 1
+                ;;
+        esac
+    done
 }
 
 # --- MAIN MENU CHOICE LOOP ---
@@ -1947,10 +1999,10 @@ main_menu() {
         print_header
         
         # Display Lark integration status in header
-        if [[ -n "${LARK_WEBHOOK_URL:-}" ]]; then
-            echo -e "${C_GRAY}Lark Alerts: ${C_BGREEN}[ACTIVE]${C_RESET}\n"
+        if [[ "${ENABLE_LARK:-}" == "true" && -n "${LARK_WEBHOOK_URL:-}" ]]; then
+            echo -e "${C_GRAY}Lark Alerts: ${C_BGREEN}[ACTIVE]${C_RESET} | ${C_GRAY}Cron Audits: ${C_BGREEN}[ACTIVE]${C_RESET}\n"
         else
-            echo -e "${C_GRAY}Lark Alerts: ${C_BRED}[INACTIVE] (Select [10] to configure)${C_RESET}\n"
+            echo -e "${C_GRAY}Lark Alerts: ${C_BRED}[INACTIVE]${C_RESET} | ${C_GRAY}Select [10] to configure notifications${C_RESET}\n"
         fi
 
         echo -e "${C_BMAGENTA}  -- SYSTEM OVERVIEW & REPORTING --${C_RESET}"
@@ -1969,9 +2021,8 @@ main_menu() {
         echo -e "   [9]  Audit Identity Credentials, Users & SSH Key Leaks"
         echo -e ""
         echo -e "${C_BCYAN}  -- TOOL CONFIGURATION & MAINTENANCE --${C_RESET}"
-        echo -e "   [10] Configure Lark Alert Webhook URL"
-        echo -e "   [11] Schedule Automated Cron Notifications (11AM, 5PM, 10PM)"
-        echo -e "   [12] Check & Update Security Toolkit (Git Pull)"
+        echo -e "   [10] Configure Security Notifications & Automated Audits"
+        echo -e "   [11] Check & Update Security Toolkit (Git Pull)"
         echo -e "   [0]  Exit Security Toolkit"
         echo -e "${C_CYAN}======================================================================${C_RESET}"
         echo -n "Select option: "
@@ -2028,12 +2079,9 @@ main_menu() {
                 press_any_key
                 ;;
             10)
-                configure_lark_webhook
+                configure_notifications
                 ;;
             11)
-                configure_cronjob
-                ;;
-            12)
                 clear_screen
                 print_header
                 update_tool
@@ -2044,7 +2092,7 @@ main_menu() {
                 exit 0
                 ;;
             *)
-                print_status "danger" "Invalid choice. Please select 0-12."
+                print_status "danger" "Invalid choice. Please select 0-11."
                 sleep 1
                 ;;
         esac
