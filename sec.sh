@@ -855,6 +855,65 @@ generate_report() {
     press_any_key
 }
 
+# --- TOOL UPDATE ENGINE ---
+update_tool() {
+    print_status "step" "Updating Linux Server Security Toolkit..."
+    log_message "INFO" "Initiating tool auto-update."
+
+    # Verify if we are inside a Git repository
+    if git rev-parse --is-inside-work-tree &>/dev/null; then
+        print_status "info" "Detected Git repository. Running fetch and reset..."
+        
+        # Pull updates safely
+        git fetch --all 2>&1
+        if git reset --hard origin/main 2>&1; then
+            chmod +x sec.sh
+            print_status "success" "Tool updated successfully via Git!"
+            log_message "INFO" "Tool updated via Git."
+            print_status "info" "Reloading tool process..."
+            sleep 1.5
+            exec bash "$0"
+        else
+            print_status "danger" "Git update failed! Please check your network or git configuration."
+            press_any_key
+        fi
+    else
+        # Standalone installation (downloaded via curl or wget)
+        print_status "info" "Standalone installation detected. Downloading fresh copy from GitHub..."
+        
+        local tmp_file="/tmp/sec_new.sh"
+        if command -v wget &>/dev/null; then
+            wget -q -O "$tmp_file" https://raw.githubusercontent.com/SAOSTAR1501/bash-security/main/sec.sh
+        elif command -v curl &>/dev/null; then
+            curl -s -o "$tmp_file" https://raw.githubusercontent.com/SAOSTAR1501/bash-security/main/sec.sh
+        else
+            print_status "danger" "Neither 'wget' nor 'curl' is installed. Cannot download updates."
+            press_any_key
+            return
+        fi
+
+        if [[ -f "$tmp_file" && -s "$tmp_file" ]]; then
+            # Verify downloaded script basic syntax/content
+            if grep -q "LINUX SERVER SECURITY TOOLKIT" "$tmp_file"; then
+                mv "$tmp_file" "$0"
+                chmod +x "$0"
+                print_status "success" "Standalone tool updated successfully from GitHub!"
+                log_message "INFO" "Standalone tool updated from GitHub."
+                print_status "info" "Reloading tool process..."
+                sleep 1.5
+                exec bash "$0"
+            else
+                print_status "danger" "Downloaded file is corrupted or invalid! Update aborted."
+                rm -f "$tmp_file"
+                press_any_key
+            fi
+        else
+            print_status "danger" "Failed to download update file from GitHub!"
+            press_any_key
+        fi
+    fi
+}
+
 # --- MAIN MENU ---
 main_menu() {
     check_root
@@ -869,6 +928,7 @@ main_menu() {
         echo -e " [5]  Check System Persistence (Cron Jobs, Systemd Services)"
         echo -e " [6]  Verify Rootkits & Preload Injections"
         echo -e " [7]  Generate Comprehensive Text Audit Report"
+        echo -e " [8]  Update Tool (Reset & Pull from GitHub)"
         echo -e " [0]  Exit Tool"
         echo -e "${C_CYAN}======================================================================${C_RESET}"
         echo -n "Select option: "
@@ -910,13 +970,18 @@ main_menu() {
                 print_header
                 generate_report
                 ;;
+            8)
+                clear_screen
+                print_header
+                update_tool
+                ;;
             0)
                 echo -e "\n${C_BGREEN}[+] Thank you for using Linux Server Security Toolkit. Stay secure!${C_RESET}"
                 log_message "INFO" "Security Toolkit closed."
                 exit 0
                 ;;
             *)
-                print_status "danger" "Invalid choice. Please select 0-7."
+                print_status "danger" "Invalid choice. Please select 0-8."
                 sleep 1
                 ;;
         esac
