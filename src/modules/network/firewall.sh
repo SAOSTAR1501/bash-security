@@ -222,6 +222,37 @@ check_ports_firewall() {
             if [[ -n "$containers" ]]; then
                 echo -e "$containers"
                 
+                # Giám sát tài nguyên Container
+                echo -e "\n${C_BWHITE}--- Docker Container Resource Usage Dashboard ---${C_RESET}"
+                local stats
+                stats=$(docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}" 2>/dev/null)
+                if [[ -n "$stats" ]]; then
+                    echo -e "$stats"
+                else
+                    print_status "warn" "Unable to collect live Docker container stats."
+                fi
+                
+                # Quét lỗ hổng Docker Socket Mount
+                echo -e "\n${C_BWHITE}--- Docker Socket Mount Vulnerability Audit ---${C_RESET}"
+                local socket_mounts=0
+                while read -r cid name; do
+                    if [[ -z "$cid" ]]; then continue; fi
+                    local inspect_mounts
+                    inspect_mounts=$(docker inspect -f '{{range .Mounts}}{{.Source}} -> {{.Destination}} {{end}}' "$cid" 2>/dev/null)
+                    if echo "$inspect_mounts" | grep -q "docker.sock"; then
+                        socket_mounts=$((socket_mounts + 1))
+                        log_message "WARNING" "Vulnerability: Container '$name' ($cid) mounts host docker.sock!"
+                        print_status "danger" "DOCKER SOCKET ESCAPE VECTOR: Container '$name' mounts '/var/run/docker.sock'!"
+                        print_status "bullet" "CRITICAL RATIONALE: Gives full root-level control over the physical host!"
+                        send_lark_notification "Docker Socket Mount Escape Vulnerability" "Container '$name' ($cid) mounts '/var/run/docker.sock'. This allows full host takeover!"
+                    fi
+                done < <(docker ps --format "{{.ID}} {{.Names}}" 2>/dev/null)
+                if [[ "$socket_mounts" -eq 0 ]]; then
+                    print_status "success" "All running containers are protected against host Docker Socket Mount escape vectors."
+                fi
+                
+                # Public Port Binding & UFW Bypass Check
+                echo -e "\n${C_BWHITE}--- Public Port Binding & UFW Bypass Check ---${C_RESET}"
                 local dangerous_bindings=0
                 while read -r name ports; do
                     if [[ -z "$name" ]]; then continue; fi
@@ -234,6 +265,7 @@ check_ports_firewall() {
                         print_status "danger" "DOCKER BYPASS VULNERABILITY: Container '$name' exposes port $bound_port to 0.0.0.0!"
                         print_status "bullet" "CRITICAL RATIONALE: Docker automatically writes raw iptables rules."
                         print_status "bullet" "Even if UFW status is ACTIVE, Docker's rules bypass UFW completely!"
+                        send_lark_notification "Dangerous Exposed Port Bindings" "Container '$name' exposes port $bound_port to 0.0.0.0. This bypasses active UFW configs!"
                     fi
                 done < <(docker ps --format "{{.Names}} {{.Ports}}" 2>/dev/null)
                 

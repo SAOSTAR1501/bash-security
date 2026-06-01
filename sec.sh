@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ======================================================================
 #          LINUX SERVER SECURITY TOOLKIT (Miner & Malware Scanner)
-#                 Compiled production build: 2026-06-01 11:43:57
+#                 Compiled production build: 2026-06-01 14:08:16
 #                 Source Architecture: MVC Modular / Domain-Driven
 # ======================================================================
 set -o pipefail
@@ -48,10 +48,16 @@ BG_BLUE="\e[44m"
 # MODULE: src/core/logger.sh
 # ======================================================================
 # ======================================================================
-# CORE COMPONENT: AUDITING LOG SYSTEM
+# CORE COMPONENT: AUDITING LOG SYSTEM & NOTIFICATIONS
 # ======================================================================
 
 LOG_FILE="/var/log/sec_toolkit.log"
+CONF_FILE="/etc/sec_toolkit.conf"
+
+# Load global configuration
+if [[ -f "$CONF_FILE" ]]; then
+    source "$CONF_FILE" 2>/dev/null
+fi
 
 # Standardized logging to LOG_FILE
 log_message() {
@@ -61,6 +67,45 @@ log_message() {
     timestamp=$(date "+%Y-%m-%d %H:%M:%S")
     echo "[$timestamp] [$level] $message" >> "$LOG_FILE" 2>/dev/null
 }
+
+# Lark Webhook Notification engine
+send_lark_notification() {
+    local title="$1"
+    local text="$2"
+    local webhook_url="${LARK_WEBHOOK_URL:-}"
+    
+    if [[ -n "$webhook_url" ]]; then
+        local full_msg="🛡️ [SECURITY ALERT: $(hostname)] - $title\n---------------------------------\n$text"
+        
+        # Escape backslashes, double quotes, and newlines for JSON safety
+        local json_safe_msg
+        json_safe_msg=$(echo "$full_msg" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')
+        
+        curl -s -X POST -H "Content-Type: application/json" \
+            -d "{\"msg_type\":\"text\",\"content\":{\"text\":\"$json_safe_msg\"}}" \
+            "$webhook_url" &>/dev/null &
+    fi
+}
+
+# Optimize Log Size (Setup logrotate rules)
+setup_logrotate() {
+    if [[ -w "/etc/logrotate.d" && ! -f "/etc/logrotate.d/sec_toolkit" ]]; then
+        cat << 'EOF' > "/etc/logrotate.d/sec_toolkit" 2>/dev/null
+/var/log/sec_toolkit.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0600 root root
+}
+EOF
+    fi
+}
+
+# Auto-run logrotate configuration
+setup_logrotate
 
 
 # ======================================================================
@@ -898,6 +943,37 @@ check_ports_firewall() {
             if [[ -n "$containers" ]]; then
                 echo -e "$containers"
                 
+                # Giám sát tài nguyên Container
+                echo -e "\n${C_BWHITE}--- Docker Container Resource Usage Dashboard ---${C_RESET}"
+                local stats
+                stats=$(docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}" 2>/dev/null)
+                if [[ -n "$stats" ]]; then
+                    echo -e "$stats"
+                else
+                    print_status "warn" "Unable to collect live Docker container stats."
+                fi
+                
+                # Quét lỗ hổng Docker Socket Mount
+                echo -e "\n${C_BWHITE}--- Docker Socket Mount Vulnerability Audit ---${C_RESET}"
+                local socket_mounts=0
+                while read -r cid name; do
+                    if [[ -z "$cid" ]]; then continue; fi
+                    local inspect_mounts
+                    inspect_mounts=$(docker inspect -f '{{range .Mounts}}{{.Source}} -> {{.Destination}} {{end}}' "$cid" 2>/dev/null)
+                    if echo "$inspect_mounts" | grep -q "docker.sock"; then
+                        socket_mounts=$((socket_mounts + 1))
+                        log_message "WARNING" "Vulnerability: Container '$name' ($cid) mounts host docker.sock!"
+                        print_status "danger" "DOCKER SOCKET ESCAPE VECTOR: Container '$name' mounts '/var/run/docker.sock'!"
+                        print_status "bullet" "CRITICAL RATIONALE: Gives full root-level control over the physical host!"
+                        send_lark_notification "Docker Socket Mount Escape Vulnerability" "Container '$name' ($cid) mounts '/var/run/docker.sock'. This allows full host takeover!"
+                    fi
+                done < <(docker ps --format "{{.ID}} {{.Names}}" 2>/dev/null)
+                if [[ "$socket_mounts" -eq 0 ]]; then
+                    print_status "success" "All running containers are protected against host Docker Socket Mount escape vectors."
+                fi
+                
+                # Public Port Binding & UFW Bypass Check
+                echo -e "\n${C_BWHITE}--- Public Port Binding & UFW Bypass Check ---${C_RESET}"
                 local dangerous_bindings=0
                 while read -r name ports; do
                     if [[ -z "$name" ]]; then continue; fi
@@ -910,6 +986,7 @@ check_ports_firewall() {
                         print_status "danger" "DOCKER BYPASS VULNERABILITY: Container '$name' exposes port $bound_port to 0.0.0.0!"
                         print_status "bullet" "CRITICAL RATIONALE: Docker automatically writes raw iptables rules."
                         print_status "bullet" "Even if UFW status is ACTIVE, Docker's rules bypass UFW completely!"
+                        send_lark_notification "Dangerous Exposed Port Bindings" "Container '$name' exposes port $bound_port to 0.0.0.0. This bypasses active UFW configs!"
                     fi
                 done < <(docker ps --format "{{.Names}} {{.Ports}}" 2>/dev/null)
                 
@@ -1459,6 +1536,7 @@ run_full_scan() {
     
     echo -e "\n${C_BCYAN}======================================================================${C_RESET}"
     print_status "success" "Security assessment complete. Audit log written to: $LOG_FILE"
+    send_lark_notification "Full System Scan Completed" "Unified security assessment has successfully completed. Detailed audit logs are written to $LOG_FILE."
     press_any_key
 }
 
@@ -1515,6 +1593,52 @@ generate_report() {
     press_any_key
 }
 
+# Lark Alert Webhook Configuration Manager
+configure_lark_webhook() {
+    clear_screen
+    print_header
+    echo -e "${C_BMAGENTA}            >>> LARK ALERT WEBHOOK CONFIGURATION <<<${C_RESET}\n"
+    
+    local current_webhook="${LARK_WEBHOOK_URL:-}"
+    if [[ -n "$current_webhook" ]]; then
+        echo -e "Current Webhook URL: ${C_BGREEN}${current_webhook:0:60}...${C_RESET}\n"
+    else
+        echo -e "Current Webhook URL: ${C_BRED}[NOT CONFIGURED]${C_RESET}\n"
+    fi
+    
+    echo -e "Lark Webhooks allow the toolkit to send real-time security alerts"
+    echo -e "directly to your Lark or Feishu chat groups when threats are detected."
+    echo -e "\nEnter new Lark Webhook URL (or press Enter to keep current, type 'none' to clear):"
+    read -r new_webhook
+    
+    if [[ "$new_webhook" == "none" ]]; then
+        if [[ -f "/etc/sec_toolkit.conf" ]]; then
+            sed -i '/LARK_WEBHOOK_URL/d' /etc/sec_toolkit.conf 2>/dev/null
+        fi
+        LARK_WEBHOOK_URL=""
+        print_status "success" "Lark Webhook URL cleared successfully."
+    elif [[ -n "$new_webhook" ]]; then
+        if [[ ! -d "/etc" ]]; then
+            mkdir -p "/etc" 2>/dev/null
+        fi
+        
+        if [[ -f "/etc/sec_toolkit.conf" ]]; then
+            sed -i '/LARK_WEBHOOK_URL/d' /etc/sec_toolkit.conf 2>/dev/null
+        fi
+        echo "LARK_WEBHOOK_URL=\"$new_webhook\"" >> "/etc/sec_toolkit.conf"
+        chmod 600 "/etc/sec_toolkit.conf" 2>/dev/null
+        LARK_WEBHOOK_URL="$new_webhook"
+        
+        print_status "success" "Lark Webhook URL saved successfully to /etc/sec_toolkit.conf"
+        
+        # Send test notification
+        print_status "info" "Sending test notification to Lark..."
+        send_lark_notification "Test Alert" "Lark Webhook Alert System has been successfully configured on $(hostname)!"
+    fi
+    
+    press_any_key
+}
+
 # --- MAIN MENU CHOICE LOOP ---
 main_menu() {
     check_root
@@ -1522,6 +1646,14 @@ main_menu() {
     while true; do
         banner
         print_header
+        
+        # Display Lark integration status in header
+        if [[ -n "${LARK_WEBHOOK_URL:-}" ]]; then
+            echo -e "${C_GRAY}Lark Alerts: ${C_BGREEN}[ACTIVE]${C_RESET}\n"
+        else
+            echo -e "${C_GRAY}Lark Alerts: ${C_BRED}[INACTIVE] (Select [10] to configure)${C_RESET}\n"
+        fi
+
         echo -e "${C_BMAGENTA}  -- SYSTEM OVERVIEW & REPORTING --${C_RESET}"
         echo -e "   [1]  Run Full System Security Scan (Unified Live Audit)"
         echo -e "   [2]  Generate Comprehensive Text Audit Report (Save to file)"
@@ -1537,8 +1669,9 @@ main_menu() {
         echo -e "   [8]  Verify Library Injections (Rootkits / ld.so.preload)"
         echo -e "   [9]  Audit Identity Credentials, Users & SSH Key Leaks"
         echo -e ""
-        echo -e "${C_BCYAN}  -- TOOL MAINTENANCE --${C_RESET}"
-        echo -e "   [10] Check & Update Security Toolkit (Git Pull)"
+        echo -e "${C_BCYAN}  -- TOOL CONFIGURATION & MAINTENANCE --${C_RESET}"
+        echo -e "   [10] Configure Lark Alert Webhook URL"
+        echo -e "   [11] Check & Update Security Toolkit (Git Pull)"
         echo -e "   [0]  Exit Security Toolkit"
         echo -e "${C_CYAN}======================================================================${C_RESET}"
         echo -n "Select option: "
@@ -1595,6 +1728,9 @@ main_menu() {
                 press_any_key
                 ;;
             10)
+                configure_lark_webhook
+                ;;
+            11)
                 clear_screen
                 print_header
                 update_tool

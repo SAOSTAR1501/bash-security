@@ -20,6 +20,7 @@ run_full_scan() {
     
     echo -e "\n${C_BCYAN}======================================================================${C_RESET}"
     print_status "success" "Security assessment complete. Audit log written to: $LOG_FILE"
+    send_lark_notification "Full System Scan Completed" "Unified security assessment has successfully completed. Detailed audit logs are written to $LOG_FILE."
     press_any_key
 }
 
@@ -76,6 +77,52 @@ generate_report() {
     press_any_key
 }
 
+# Lark Alert Webhook Configuration Manager
+configure_lark_webhook() {
+    clear_screen
+    print_header
+    echo -e "${C_BMAGENTA}            >>> LARK ALERT WEBHOOK CONFIGURATION <<<${C_RESET}\n"
+    
+    local current_webhook="${LARK_WEBHOOK_URL:-}"
+    if [[ -n "$current_webhook" ]]; then
+        echo -e "Current Webhook URL: ${C_BGREEN}${current_webhook:0:60}...${C_RESET}\n"
+    else
+        echo -e "Current Webhook URL: ${C_BRED}[NOT CONFIGURED]${C_RESET}\n"
+    fi
+    
+    echo -e "Lark Webhooks allow the toolkit to send real-time security alerts"
+    echo -e "directly to your Lark or Feishu chat groups when threats are detected."
+    echo -e "\nEnter new Lark Webhook URL (or press Enter to keep current, type 'none' to clear):"
+    read -r new_webhook
+    
+    if [[ "$new_webhook" == "none" ]]; then
+        if [[ -f "/etc/sec_toolkit.conf" ]]; then
+            sed -i '/LARK_WEBHOOK_URL/d' /etc/sec_toolkit.conf 2>/dev/null
+        fi
+        LARK_WEBHOOK_URL=""
+        print_status "success" "Lark Webhook URL cleared successfully."
+    elif [[ -n "$new_webhook" ]]; then
+        if [[ ! -d "/etc" ]]; then
+            mkdir -p "/etc" 2>/dev/null
+        fi
+        
+        if [[ -f "/etc/sec_toolkit.conf" ]]; then
+            sed -i '/LARK_WEBHOOK_URL/d' /etc/sec_toolkit.conf 2>/dev/null
+        fi
+        echo "LARK_WEBHOOK_URL=\"$new_webhook\"" >> "/etc/sec_toolkit.conf"
+        chmod 600 "/etc/sec_toolkit.conf" 2>/dev/null
+        LARK_WEBHOOK_URL="$new_webhook"
+        
+        print_status "success" "Lark Webhook URL saved successfully to /etc/sec_toolkit.conf"
+        
+        # Send test notification
+        print_status "info" "Sending test notification to Lark..."
+        send_lark_notification "Test Alert" "Lark Webhook Alert System has been successfully configured on $(hostname)!"
+    fi
+    
+    press_any_key
+}
+
 # --- MAIN MENU CHOICE LOOP ---
 main_menu() {
     check_root
@@ -83,6 +130,14 @@ main_menu() {
     while true; do
         banner
         print_header
+        
+        # Display Lark integration status in header
+        if [[ -n "${LARK_WEBHOOK_URL:-}" ]]; then
+            echo -e "${C_GRAY}Lark Alerts: ${C_BGREEN}[ACTIVE]${C_RESET}\n"
+        else
+            echo -e "${C_GRAY}Lark Alerts: ${C_BRED}[INACTIVE] (Select [10] to configure)${C_RESET}\n"
+        fi
+
         echo -e "${C_BMAGENTA}  -- SYSTEM OVERVIEW & REPORTING --${C_RESET}"
         echo -e "   [1]  Run Full System Security Scan (Unified Live Audit)"
         echo -e "   [2]  Generate Comprehensive Text Audit Report (Save to file)"
@@ -98,8 +153,9 @@ main_menu() {
         echo -e "   [8]  Verify Library Injections (Rootkits / ld.so.preload)"
         echo -e "   [9]  Audit Identity Credentials, Users & SSH Key Leaks"
         echo -e ""
-        echo -e "${C_BCYAN}  -- TOOL MAINTENANCE --${C_RESET}"
-        echo -e "   [10] Check & Update Security Toolkit (Git Pull)"
+        echo -e "${C_BCYAN}  -- TOOL CONFIGURATION & MAINTENANCE --${C_RESET}"
+        echo -e "   [10] Configure Lark Alert Webhook URL"
+        echo -e "   [11] Check & Update Security Toolkit (Git Pull)"
         echo -e "   [0]  Exit Security Toolkit"
         echo -e "${C_CYAN}======================================================================${C_RESET}"
         echo -n "Select option: "
@@ -156,6 +212,9 @@ main_menu() {
                 press_any_key
                 ;;
             10)
+                configure_lark_webhook
+                ;;
+            11)
                 clear_screen
                 print_header
                 update_tool
