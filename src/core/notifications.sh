@@ -554,8 +554,8 @@ configure_notifications() {
                     script_path=$(realpath "$0" 2>/dev/null)
                     [[ -z "$script_path" ]] && script_path="/usr/local/bin/main.sh"
                     
-                    # Register/update cron rules
-                    (crontab -l 2>/dev/null | grep -v "main.sh") | crontab -
+                    # Register/update cron rules (clean out both legacy sec.sh and main.sh entries)
+                    (crontab -l 2>/dev/null | grep -v -E "(main\.sh|sec\.sh)") | crontab -
                     (crontab -l 2>/dev/null; echo "0 $CRON_HOURS * * * bash $script_path --cron >/dev/null 2>&1") | crontab -
                     print_status "success" "Automated Audits cronjob activated successfully for hours: $CRON_HOURS"
                 elif [[ "$cron_toggle" == "2" ]]; then
@@ -564,7 +564,7 @@ configure_notifications() {
                     script_path=$(realpath "$0" 2>/dev/null)
                     [[ -z "$script_path" ]] && script_path="/usr/local/bin/main.sh"
                     
-                    (crontab -l 2>/dev/null | grep -v "main.sh") | crontab -
+                    (crontab -l 2>/dev/null | grep -v -E "(main\.sh|sec\.sh)") | crontab -
                     print_status "success" "Automated Audits cronjob deactivated."
                 fi
                 save_config
@@ -589,3 +589,26 @@ configure_notifications() {
         esac
     done
 }
+
+# Auto-migrate legacy cron entries from sec.sh to the new main.sh (silently runs when toolkit boots)
+migrate_legacy_cron() {
+    if crontab -l 2>/dev/null | grep -q "sec.sh"; then
+        local script_path
+        script_path=$(realpath "$0" 2>/dev/null)
+        [[ -z "$script_path" ]] && script_path="/usr/local/bin/main.sh"
+        
+        # Read the current audit hours from the legacy crontab or fallback to default
+        local legacy_hours
+        legacy_hours=$(crontab -l 2>/dev/null | grep "sec.sh" | head -n 1 | awk '{print $2}')
+        [[ -z "$legacy_hours" ]] && legacy_hours="11,17,22"
+        
+        # Clear all legacy references and register the correct new main.sh path
+        (crontab -l 2>/dev/null | grep -v -E "(main\.sh|sec\.sh)") | crontab -
+        (crontab -l 2>/dev/null; echo "0 $legacy_hours * * * bash $script_path --cron >/dev/null 2>&1") | crontab -
+        
+        log_message "INFO" "Migrated legacy cron entry pointing to sec.sh to the new main.sh successfully."
+    fi
+}
+
+# Run legacy crontab migration check automatically
+migrate_legacy_cron
