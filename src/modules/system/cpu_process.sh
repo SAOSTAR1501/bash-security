@@ -208,12 +208,27 @@ process_investigator() {
             [[ -f "/proc/$target_pid/status" ]] && parent_pid=$(grep PPid "/proc/$target_pid/status" | awk '{print $2}')
             [[ -L "/proc/$target_pid/cwd" ]] && cwd=$(readlink "/proc/$target_pid/cwd")
 
+            # Resolve compromised docker container if running in cgroup
+            local container_id=""
+            local container_name=""
+            if [[ "$cgroup" == *"Docker"* || "$cgroup" == *"Container"* ]]; then
+                container_id=$(cat "/proc/$target_pid/cgroup" 2>/dev/null | grep -o -E '[a-f0-9]{64}' | head -n 1 | cut -c1-12)
+                if [[ -n "$container_id" && -x $(which docker 2>/dev/null) ]]; then
+                    container_name=$(docker inspect --format '{{.Name}}' "$container_id" 2>/dev/null | tr -d '/')
+                fi
+            fi
+
             echo -e "${C_BWHITE}--- Process Dossier ---${C_RESET}"
             printf "${C_BOLD}%-20s:${C_RESET} %s\n" "Command Name" "$comm"
             printf "${C_BOLD}%-20s:${C_RESET} %s\n" "Owner/User" "$user"
             printf "${C_BOLD}%-20s:${C_RESET} %s%%\n" "CPU Resource Usage" "$cpu"
             printf "${C_BOLD}%-20s:${C_RESET} %s%%\n" "Memory Resource Usage" "$mem"
             printf "${C_BOLD}%-20s:${C_RESET} %s\n" "Cgroup/Namespace" "$cgroup"
+            
+            if [[ -n "$container_id" ]]; then
+                printf "${C_BOLD}%-20s:${C_RESET} ${C_BRED}%s (ID: %s)${C_RESET}\n" "Exposed Container" "${container_name:-Unknown}" "$container_id"
+            fi
+            
             printf "${C_BOLD}%-20s:${C_RESET} %s\n" "Parent PID" "$parent_pid"
             printf "${C_BOLD}%-20s:${C_RESET} %s\n" "Working Directory" "$cwd"
             
@@ -272,6 +287,11 @@ process_investigator() {
             echo -e "  [S] ${C_BYELLOW}Freeze/Suspend (STOP)${C_RESET}   - Safely pauses process (releases 100% CPU)"
             echo -e "  [C] ${C_BGREEN}Resume/Continue (CONT)${C_RESET}   - Resumes process if frozen"
             echo -e "  [K] ${C_BRED}Hard Terminate (KILL)${C_RESET}    - Sends SIGKILL (kill -9) to destroy process"
+            
+            if [[ -n "$container_id" ]]; then
+                echo -e "  [D] ${C_BRED}Destroy Host Container (${container_name})${C_RESET} - STOPS & DELETES container instantly"
+            fi
+            
             echo -e "  [I] ${C_BMAGENTA}Isolate Source Binary${C_RESET}    - Revokes execute permissions & renames binary"
             echo -e "  [B] Back to Process List"
             echo -e "${C_BCYAN}======================================================================${C_RESET}"
@@ -314,6 +334,26 @@ process_investigator() {
                         fi
                     fi
                     ;;
+                "D")
+                    if [[ -n "$container_id" ]]; then
+                        print_status "warn" "WARNING: This will permanently STOP and DELETE the container '${container_name}' ($container_id)!"
+                        echo -n "Confirm container destruction? [y/N]: "
+                        read -r confirm
+                        if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+                            print_status "info" "Stopping container '${container_name}' ($container_id)..."
+                            docker stop "$container_id" &>/dev/null
+                            print_status "info" "Removing container '${container_name}' ($container_id)..."
+                            docker rm "$container_id" &>/dev/null
+                            log_message "ACTION" "Destroyed compromised container ${container_name} ($container_id)"
+                            print_status "success" "Container successfully DELETED! The miner process inside has been permanently neutralized."
+                            sleep 3
+                            break 2 # Break both loops (Dossier & Target PID) to go back to Process List!
+                        fi
+                    else
+                        print_status "danger" "Process is not running inside a Docker container."
+                        sleep 2
+                    fi
+                    ;;
                 "I")
                     local clean_exe="${exe_path// (deleted)/}"
                     if [[ -f "$clean_exe" ]]; then
@@ -337,7 +377,7 @@ process_investigator() {
                     break
                     ;;
                 *)
-                    print_status "danger" "Invalid selection. Please choose S, C, K, I or B."
+                    print_status "danger" "Invalid selection. Please choose S, C, K, D, I or B."
                     sleep 1.5
                     ;;
             esac

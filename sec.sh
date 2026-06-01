@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # ======================================================================
 #          LINUX SERVER SECURITY TOOLKIT (Miner & Malware Scanner)
-#                 Compiled production build: 2026-06-01 10:19:00
+#                 Compiled production build: 2026-06-01 11:19:21
 #                 Source Architecture: MVC Modular / Domain-Driven
 # ======================================================================
 set -o pipefail
 
+# ======================================================================
+# MODULE: src/core/colors.sh
+# ======================================================================
 # ======================================================================
 # CORE COMPONENT: TERMINAL COLORS
 # ======================================================================
@@ -40,6 +43,10 @@ BG_RED="\e[41m"
 BG_YELLOW="\e[43m"
 BG_BLUE="\e[44m"
 
+
+# ======================================================================
+# MODULE: src/core/logger.sh
+# ======================================================================
 # ======================================================================
 # CORE COMPONENT: AUDITING LOG SYSTEM
 # ======================================================================
@@ -55,6 +62,10 @@ log_message() {
     echo "[$timestamp] [$level] $message" >> "$LOG_FILE" 2>/dev/null
 }
 
+
+# ======================================================================
+# MODULE: src/core/root.sh
+# ======================================================================
 # ======================================================================
 # CORE COMPONENT: PRIVILEGE VALIDATOR
 # ======================================================================
@@ -68,6 +79,10 @@ check_root() {
     fi
 }
 
+
+# ======================================================================
+# MODULE: src/core/ui.sh
+# ======================================================================
 # ======================================================================
 # CORE COMPONENT: VISUAL INTERFACE ENGINE
 # ======================================================================
@@ -119,6 +134,9 @@ banner() {
 
 
 # ======================================================================
+# MODULE: src/modules/system/sys_info.sh
+# ======================================================================
+# ======================================================================
 # MODULE: SYSTEM INFO AUDITOR
 # ======================================================================
 
@@ -155,6 +173,9 @@ display_system_info() {
 }
 
 
+# ======================================================================
+# MODULE: src/modules/system/cpu_process.sh
+# ======================================================================
 # ======================================================================
 # MODULE: PROCESS SECURITY & CPU INVESTIGATOR
 # ======================================================================
@@ -365,12 +386,27 @@ process_investigator() {
             [[ -f "/proc/$target_pid/status" ]] && parent_pid=$(grep PPid "/proc/$target_pid/status" | awk '{print $2}')
             [[ -L "/proc/$target_pid/cwd" ]] && cwd=$(readlink "/proc/$target_pid/cwd")
 
+            # Resolve compromised docker container if running in cgroup
+            local container_id=""
+            local container_name=""
+            if [[ "$cgroup" == *"Docker"* || "$cgroup" == *"Container"* ]]; then
+                container_id=$(cat "/proc/$target_pid/cgroup" 2>/dev/null | grep -o -E '[a-f0-9]{64}' | head -n 1 | cut -c1-12)
+                if [[ -n "$container_id" && -x $(which docker 2>/dev/null) ]]; then
+                    container_name=$(docker inspect --format '{{.Name}}' "$container_id" 2>/dev/null | tr -d '/')
+                fi
+            fi
+
             echo -e "${C_BWHITE}--- Process Dossier ---${C_RESET}"
             printf "${C_BOLD}%-20s:${C_RESET} %s\n" "Command Name" "$comm"
             printf "${C_BOLD}%-20s:${C_RESET} %s\n" "Owner/User" "$user"
             printf "${C_BOLD}%-20s:${C_RESET} %s%%\n" "CPU Resource Usage" "$cpu"
             printf "${C_BOLD}%-20s:${C_RESET} %s%%\n" "Memory Resource Usage" "$mem"
             printf "${C_BOLD}%-20s:${C_RESET} %s\n" "Cgroup/Namespace" "$cgroup"
+            
+            if [[ -n "$container_id" ]]; then
+                printf "${C_BOLD}%-20s:${C_RESET} ${C_BRED}%s (ID: %s)${C_RESET}\n" "Exposed Container" "${container_name:-Unknown}" "$container_id"
+            fi
+            
             printf "${C_BOLD}%-20s:${C_RESET} %s\n" "Parent PID" "$parent_pid"
             printf "${C_BOLD}%-20s:${C_RESET} %s\n" "Working Directory" "$cwd"
             
@@ -429,6 +465,11 @@ process_investigator() {
             echo -e "  [S] ${C_BYELLOW}Freeze/Suspend (STOP)${C_RESET}   - Safely pauses process (releases 100% CPU)"
             echo -e "  [C] ${C_BGREEN}Resume/Continue (CONT)${C_RESET}   - Resumes process if frozen"
             echo -e "  [K] ${C_BRED}Hard Terminate (KILL)${C_RESET}    - Sends SIGKILL (kill -9) to destroy process"
+            
+            if [[ -n "$container_id" ]]; then
+                echo -e "  [D] ${C_BRED}Destroy Host Container (${container_name})${C_RESET} - STOPS & DELETES container instantly"
+            fi
+            
             echo -e "  [I] ${C_BMAGENTA}Isolate Source Binary${C_RESET}    - Revokes execute permissions & renames binary"
             echo -e "  [B] Back to Process List"
             echo -e "${C_BCYAN}======================================================================${C_RESET}"
@@ -471,6 +512,26 @@ process_investigator() {
                         fi
                     fi
                     ;;
+                "D")
+                    if [[ -n "$container_id" ]]; then
+                        print_status "warn" "WARNING: This will permanently STOP and DELETE the container '${container_name}' ($container_id)!"
+                        echo -n "Confirm container destruction? [y/N]: "
+                        read -r confirm
+                        if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+                            print_status "info" "Stopping container '${container_name}' ($container_id)..."
+                            docker stop "$container_id" &>/dev/null
+                            print_status "info" "Removing container '${container_name}' ($container_id)..."
+                            docker rm "$container_id" &>/dev/null
+                            log_message "ACTION" "Destroyed compromised container ${container_name} ($container_id)"
+                            print_status "success" "Container successfully DELETED! The miner process inside has been permanently neutralized."
+                            sleep 3
+                            break 2 # Break both loops (Dossier & Target PID) to go back to Process List!
+                        fi
+                    else
+                        print_status "danger" "Process is not running inside a Docker container."
+                        sleep 2
+                    fi
+                    ;;
                 "I")
                     local clean_exe="${exe_path// (deleted)/}"
                     if [[ -f "$clean_exe" ]]; then
@@ -494,7 +555,7 @@ process_investigator() {
                     break
                     ;;
                 *)
-                    print_status "danger" "Invalid selection. Please choose S, C, K, I or B."
+                    print_status "danger" "Invalid selection. Please choose S, C, K, D, I or B."
                     sleep 1.5
                     ;;
             esac
@@ -503,6 +564,9 @@ process_investigator() {
 }
 
 
+# ======================================================================
+# MODULE: src/modules/network/connections.sh
+# ======================================================================
 # ======================================================================
 # MODULE: NETWORK SOCKET AUDITOR
 # ======================================================================
@@ -533,7 +597,7 @@ check_network_connections() {
     fi
 
     printf "${C_BOLD}%-6s %-12s %-20s %-25s %-12s %-15s${C_RESET}\n" "PROTO" "PID" "PROCESS" "LOCAL ADDRESS" "REMOTE PORT" "STATE"
-    echo -e "${C_GRAY}----------------------------------------------------------------------------------${C_RESET}"
+    echo -e "${C_GRAY}----------------------------------------------------------------------------------------------------${C_RESET}"
 
     local port_regex
     port_regex=$(echo "${MINING_PORTS[@]}" | tr ' ' '|')
@@ -598,7 +662,7 @@ check_network_connections() {
         done < <(netstat -nap 2>/dev/null)
     fi
 
-    echo -e "${C_GRAY}----------------------------------------------------------------------------------${C_RESET}"
+    echo -e "${C_GRAY}----------------------------------------------------------------------------------------------------${C_RESET}"
     if [[ "$network_threats" -gt 0 ]]; then
         print_status "danger" "Found $network_threats network connections linking suspicious paths or stratum ports."
     else
@@ -607,6 +671,9 @@ check_network_connections() {
 }
 
 
+# ======================================================================
+# MODULE: src/modules/network/firewall.sh
+# ======================================================================
 # ======================================================================
 # MODULE: PORTS & FIREWALL AUDITOR (WITH DOCKER EXPOSURE CHECKS)
 # ======================================================================
@@ -851,7 +918,7 @@ check_ports_firewall() {
                     print_status "warn" "Exposed ports identified! Recommendation: Sửa file docker-compose.yml"
                     print_status "bullet" "Thay đổi '- p 3306:3306' thành '- p 127.0.0.1:3306:3306' rồi restart container."
                     
-                    # Trigger interactive wizard!
+                    # Trigger interactive SOAR wizard!
                     remediate_docker_ports
                 fi
             else
@@ -866,6 +933,9 @@ check_ports_firewall() {
 }
 
 
+# ======================================================================
+# MODULE: src/modules/filesystem/writable_paths.sh
+# ======================================================================
 # ======================================================================
 # MODULE: WRITEABLE STORAGE SCANNER
 # ======================================================================
@@ -933,6 +1003,9 @@ check_globally_writeable() {
 
 
 # ======================================================================
+# MODULE: src/modules/filesystem/integrity.sh
+# ======================================================================
+# ======================================================================
 # MODULE: ROOTKIT & SYSTEM INTEGRITY CHECKER
 # ======================================================================
 
@@ -978,6 +1051,9 @@ check_system_integrity() {
 }
 
 
+# ======================================================================
+# MODULE: src/modules/persistence/entries.sh
+# ======================================================================
 # ======================================================================
 # MODULE: PERSISTENCE MECHANISMS AUDITOR
 # ======================================================================
@@ -1063,6 +1139,9 @@ check_persistence() {
 
 
 # ======================================================================
+# MODULE: src/modules/identity/users.sh
+# ======================================================================
+# ======================================================================
 # MODULE: USER IDENTITY & PRIVILEGE AUDITOR
 # ======================================================================
 
@@ -1119,6 +1198,7 @@ audit_system_users() {
         
         if [[ "$is_login" -eq 1 ]]; then
             active_accounts=$((active_accounts + 1))
+            # Highlight non-standard login accounts
             if [[ "$u" != "root" && "$uid" -lt 1000 ]]; then
                 printf "${C_BYELLOW}%-15s %-6s %-6s %-30s %-20s${C_RESET}\n" \
                     "$u" "$uid" "$gid" "${home:0:29}" "$shell"
@@ -1144,6 +1224,9 @@ audit_system_users() {
 }
 
 
+# ======================================================================
+# MODULE: src/modules/identity/ssh_keys.sh
+# ======================================================================
 # ======================================================================
 # MODULE: SSH KEYS AUDITOR
 # ======================================================================
@@ -1171,6 +1254,7 @@ audit_ssh_keys() {
             local comment="No Comment"
             
             key_type=$(echo "$line" | awk '{print $1}')
+            # If options are present, the first field might contain options, key_type is second
             if [[ "$key_type" == *"="* ]]; then
                 key_type=$(echo "$line" | awk '{print $2}')
                 comment=$(echo "$line" | cut -d' ' -f3-)
@@ -1221,6 +1305,7 @@ audit_ssh_keys() {
     echo -e "\n${C_BWHITE}--- Exposed Private SSH Key Hunter ---${C_RESET}"
     print_status "info" "Searching home directories and /root for private keys left in plaintext..."
 
+    # Common private key headers
     local headers=("BEGIN OPENSSH PRIVATE KEY" "BEGIN RSA PRIVATE KEY" "BEGIN EC PRIVATE KEY" "BEGIN DSA PRIVATE KEY" "BEGIN PRIVATE KEY")
     
     for scan_dir in "/root" "/home"; do
@@ -1228,9 +1313,11 @@ audit_ssh_keys() {
             continue
         fi
 
+        # Find all files of reasonable size (to avoid reading huge text logs) up to depth 4
         while read -r file_path; do
             [[ -z "$file_path" || ! -f "$file_path" || ! -r "$file_path" ]] && continue
             
+            # Skip standard system directories and git files
             if [[ "$file_path" == *"/.git/"* || "$file_path" == *"/.cache/"* || "$file_path" == *"/node_modules/"* ]]; then
                 continue
             fi
@@ -1264,6 +1351,9 @@ audit_ssh_keys() {
 }
 
 
+# ======================================================================
+# MODULE: src/modules/updater/git_wget.sh
+# ======================================================================
 # ======================================================================
 # MODULE: TOOL AUTO-UPDATER
 # ======================================================================
@@ -1325,7 +1415,10 @@ update_tool() {
 
 
 # ======================================================================
-# ENTRYPOINT & MENU
+# MODULE: src/main.sh
+# ======================================================================
+# ======================================================================
+# CORE MAIN ENTRYPOINT & ORCHESTRATOR
 # ======================================================================
 
 # Orchestrate all security scans
@@ -1494,3 +1587,5 @@ main_menu() {
 
 # Start execution
 main_menu
+
+
