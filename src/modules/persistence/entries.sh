@@ -50,7 +50,7 @@ check_persistence() {
             [[ -z "$line" || "$line" =~ ^\s*# ]] && continue
             
             # Check if it is the Security Toolkit cron job
-            if echo "$line" | grep -q "sec.sh --cron"; then
+            if echo "$line" | grep -qE "(main\.sh|sec\.sh) --cron"; then
                 sec_cron_active=1
                 sec_cron_details="$line"
                 continue
