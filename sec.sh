@@ -216,7 +216,7 @@ check_cpu_processes() {
             for fake in "${COMMON_MASQUERADE[@]}"; do
                 if [[ "$comm" == "$fake" ]]; then
                     # Check if actual path is typical
-                    if [[ "$exe_path" != "/usr/bin/"* && "$exe_path" != "/usr/sbin/"* && "$exe_path" != "/lib/"* && "$exe_path" != "/usr/libexec/"* && "$exe_path" != "/run/current-system/"* ]]; then
+                    if [[ "$exe_path" != "/usr/bin/"* && "$exe_path" != "/usr/sbin/"* && "$exe_path" != "/lib/"* && "$exe_path" != "/usr/lib/"* && "$exe_path" != "/usr/lib64/"* && "$exe_path" != "/usr/libexec/"* && "$exe_path" != "/run/current-system/"* ]]; then
                         is_suspicious=1
                         reason="Fake $fake process"
                     fi
@@ -387,7 +387,7 @@ check_globally_writeable() {
     # 2. Hidden scripts
     # 3. Known miner config names (config.json, pool.txt, etc.)
     
-    echo -e "${C_BOLD}%-25s %-12s %-15s %-10s %-15s${C_RESET}" "PATH" "PERMISSIONS" "OWNER" "SIZE" "TYPE"
+    printf "${C_BOLD}%-25s %-12s %-15s %-10s %-15s${C_RESET}\n" "PATH" "PERMISSIONS" "OWNER" "SIZE" "TYPE"
     echo -e "${C_GRAY}----------------------------------------------------------------------------------------------------${C_RESET}"
 
     for target_dir in "/tmp" "/var/tmp" "/dev/shm" "/run/user"; do
@@ -464,8 +464,12 @@ check_persistence() {
             local exec_start
             exec_start=$(grep -E '^\s*ExecStart\s*=' "$service_file" 2>/dev/null)
             if [[ -n "$exec_start" ]]; then
+                # Clean prefix "ExecStart=" and possible leading hyphens or modifiers to get the binary path
+                local cmd_binary
+                cmd_binary=$(echo "$exec_start" | sed -E 's/^\s*ExecStart\s*=\s*-?//' | awk '{print $1}' | tr -d '"'\')
+                
                 for path in "${SUSPICIOUS_PATHS[@]}"; do
-                    if echo "$exec_start" | grep -q "$path"; then
+                    if [[ "$cmd_binary" == "$path"* ]]; then
                         persistence_issues=$((persistence_issues + 1))
                         log_message "WARNING" "Suspicious Systemd service: $service_file -> Runs out of $path"
                         print_status "warn" "Systemd Unit: $(basename "$service_file")"
