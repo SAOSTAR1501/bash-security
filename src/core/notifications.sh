@@ -253,13 +253,34 @@ run_cron_scan() {
             fi
         done < <(docker ps --format "{{.ID}} {{.Names}}" 2>/dev/null)
         
+        # Find default public interface for Docker hardening
+        local interface="eth0"
+        local try_interface
+        try_interface=$(ip route show | grep default | grep -oE "dev [^ ]+" | awk '{print $2}' | head -n 1)
+        [[ -n "$try_interface" ]] && interface="$try_interface"
+
         # Check exposed database ports
         while read -r name ports; do
             if [[ -z "$name" ]]; then continue; fi
             if echo "$ports" | grep -qE "0.0.0.0:(3306|5432|5433|6379|27017|9200|8080|22)->"; then
                 local bound_port
                 bound_port=$(echo "$ports" | grep -o -E "0.0.0.0:[0-9]+" | cut -d':' -f2)
-                dangerous_ports+="  ⚠️ **$name** exposes database port \`$bound_port\` publicly! (UFW BYPASS)${BR}"
+                
+                # --- ACTIVE SOAR: Docker UFW-Bypass Auto-Hardening ---
+                local port_secured=0
+                if iptables -S DOCKER-USER 2>/dev/null | grep -qE "(-p tcp -m tcp --dport $bound_port -j DROP|-p tcp --dport $bound_port -j DROP)"; then
+                    port_secured=1
+                else
+                    if iptables -I DOCKER-USER -i "$interface" -p tcp --dport "$bound_port" -j DROP &>/dev/null; then
+                        port_secured=1
+                        soar_actions+="  🛡️ **Auto-secured Docker Port**: Blocked public access to port \`$bound_port\` (Container: \`$name\` • Dev: \`$interface\`)${BR}"
+                        log_message "WARNING" "Active SOAR: Automatically blocked public access to Docker exposed port $bound_port (container $name) via DOCKER-USER chain"
+                    fi
+                fi
+                
+                local secure_label=""
+                [[ "$port_secured" -eq 1 ]] && secure_label=" 🛡️ [AUTO-SECURED]"
+                dangerous_ports+="  ⚠️ **$name** exposes database port \`$bound_port\` publicly! (UFW BYPASS)${secure_label}${BR}"
             fi
         done < <(docker ps --format "{{.Names}} {{.Ports}}" 2>/dev/null)
     fi
@@ -352,6 +373,42 @@ run_cron_scan() {
         audit_text+="**🛑 TOP 5 ACTIVE PROCESSES (CPU):**${BR}$susp_proc${BR}"
     fi
     
+    # --- ACTIVE SOAR & FORENSICS: Kernel-Space Hidden Process Auditor ---
+    local hidden_pids=""
+    local hidden_count=0
+    for pid_dir in /proc/[0-9]*; do
+        [[ ! -d "$pid_dir" ]] && continue
+        local pid
+        pid=$(basename "$pid_dir")
+        
+        # Check if PID is absent in standard ps output
+        if ! ps -p "$pid" &>/dev/null; then
+            # Double check after a small delay to filter out transient/short-lived bash process forks
+            sleep 0.1
+            if [[ -d "/proc/$pid" ]] && ! ps -p "$pid" &>/dev/null; then
+                hidden_count=$((hidden_count + 1))
+                local comm="unknown"
+                [[ -f "/proc/$pid/comm" ]] && comm=$(cat "/proc/$pid/comm" 2>/dev/null)
+                local exe_path=""
+                [[ -L "/proc/$pid/exe" ]] && exe_path=$(readlink "/proc/$pid/exe" 2>/dev/null)
+                
+                # Auto-freeze the hidden process via SIGSTOP to drop CPU and preserve state
+                if kill -STOP "$pid" 2>/dev/null; then
+                    soar_actions+="  🚨 **Auto-frozen Hidden Process (Rootkit)**: PID \`$pid\` (\`$comm\`)${BR}     ├─ Path  : \`${exe_path:-unknown/deleted}\`${BR}     └─ Status: Suspended (SIGSTOP). Critical hidden threat neutralized.${BR}"
+                    log_message "WARNING" "Active SOAR: Automatically suspended hidden rootkit process PID $pid ($comm) using SIGSTOP"
+                    hidden_pids+="  ⚠️ **Hidden Process**: PID \`$pid\` (\`$comm\`) -> \`${exe_path:-unknown/deleted}\` ❄️ [AUTO-FROZEN]${BR}"
+                else
+                    hidden_pids+="  ⚠️ **Hidden Process**: PID \`$pid\` (\`$comm\`) -> \`${exe_path:-unknown/deleted}\` 🚨 [FREEZE FAILED]${BR}"
+                fi
+            fi
+        fi
+    done
+    
+    if [[ "$hidden_count" -gt 0 ]]; then
+        hidden_pids=$(echo "$hidden_pids" | sed 's/<br>$//')
+        audit_text+="**🚨 CRITICAL HIDDEN ROOTKIT PROCESSES:**${BR}$hidden_pids${BR}${BR}"
+    fi
+    
     # 5. Outbound Mining stratum Connections
     local stratum_conns=""
     local port_regex
@@ -382,7 +439,10 @@ run_cron_scan() {
     local alert_level="success"
     local alert_title="Daily Server Health: ALL SYSTEMS NORMAL"
     
-    if [[ -n "$soar_actions" ]]; then
+    if [[ "$hidden_count" -gt 0 ]]; then
+        alert_level="danger"
+        alert_title="VPS SECURITY ALERT: Critical Hidden Rootkits Detected!"
+    elif [[ -n "$soar_actions" ]]; then
         alert_level="danger"
         alert_title="VPS SECURITY ALERT: Active SOAR Auto-Defenses Triggered!"
     elif [[ -n "$socket_mounts" || -n "$dangerous_ports" || -n "$stratum_conns" || "$suid_count" -gt 0 || "$log_tampered" -eq 1 || "$sudo_count" -gt 0 || "$failed_logins" -gt 15 ]]; then
