@@ -2,6 +2,111 @@
 # MODULE: PORTS & FIREWALL AUDITOR (WITH DOCKER EXPOSURE CHECKS)
 # ======================================================================
 
+remediate_docker_ports() {
+    local pub_interface
+    pub_interface=$(ip route show | grep default | awk '{print $5}')
+    [[ -z "$pub_interface" ]] && pub_interface="eth0"
+
+    echo -e "\n${C_BCYAN}======================================================================${C_RESET}"
+    echo -e "${C_BYELLOW}            DOCKER PORT REMEDIATION WIZARD${C_RESET}"
+    echo -e "${C_BCYAN}======================================================================${C_RESET}"
+    print_status "info" "We detected exposed Docker container ports accessible from the internet."
+    print_status "info" "Public Network Interface: $pub_interface"
+    echo -e "\nHow would you like to secure your server?"
+    echo -e "  [1] ${C_BGREEN}Block ALL external connections to ALL Docker containers (Highly Recommended)${C_RESET}"
+    echo -e "      -> Completely safe for host reverse-proxies (like Nginx) and internal containers."
+    echo -e "      -> Locks down all databases, MinIO, APIs, mail containers instantly."
+    echo -e "  [2] ${C_BYELLOW}Block external connections only to Postgres Database (Port 5432/5433)${C_RESET}"
+    echo -e "  [3] Block a custom port of your choice from the internet"
+    echo -e "  [0] Skip hardening (Keep ports exposed to internet)"
+    echo -e "${C_BCYAN}======================================================================${C_RESET}"
+    echo -n "Select action [1-3, or 0 to skip]: "
+    read -r wizard_choice
+
+    case "$wizard_choice" in
+        1)
+            print_status "info" "Injecting global block rule into iptables DOCKER-USER chain..."
+            if iptables -I DOCKER-USER -i "$pub_interface" -j DROP 2>/dev/null; then
+                log_message "ACTION" "Blocked all external access to Docker containers on interface $pub_interface"
+                print_status "success" "Rule successfully injected! All Docker ports are now protected from the internet."
+                
+                # Handle persistence
+                echo -e ""
+                print_status "info" "Do you want to save this rule permanently so it survives reboots? [Y/n]: "
+                read -r save_confirm
+                if [[ "$save_confirm" != "n" && "$save_confirm" != "N" ]]; then
+                    if command -v netfilter-persistent &>/dev/null; then
+                        netfilter-persistent save 2>/dev/null
+                        print_status "success" "Rules saved successfully using netfilter-persistent."
+                    else
+                        print_status "warn" "netfilter-persistent is not installed. Installing iptables-persistent..."
+                        apt-get update -y && apt-get install -y iptables-persistent
+                        netfilter-persistent save 2>/dev/null
+                        print_status "success" "Rules saved successfully!"
+                    fi
+                fi
+            else
+                print_status "danger" "Failed to inject iptables rule. Ensure you have root privileges."
+            fi
+            ;;
+        2)
+            print_status "info" "Injecting Postgres block rule into iptables DOCKER-USER chain..."
+            if iptables -I DOCKER-USER -i "$pub_interface" -p tcp --dport 5432 -j DROP 2>/dev/null; then
+                log_message "ACTION" "Blocked external access to Postgres container on interface $pub_interface"
+                print_status "success" "Rule successfully injected! Port 5432/5433 are now protected."
+                
+                echo -e ""
+                print_status "info" "Do you want to save this rule permanently so it survives reboots? [Y/n]: "
+                read -r save_confirm
+                if [[ "$save_confirm" != "n" && "$save_confirm" != "N" ]]; then
+                    if command -v netfilter-persistent &>/dev/null; then
+                        netfilter-persistent save 2>/dev/null
+                        print_status "success" "Rules saved successfully."
+                    else
+                        print_status "warn" "netfilter-persistent is not installed. Installing..."
+                        apt-get update -y && apt-get install -y iptables-persistent
+                        netfilter-persistent save 2>/dev/null
+                        print_status "success" "Rules saved successfully!"
+                    fi
+                fi
+            else
+                print_status "danger" "Failed to inject rule."
+            fi
+            ;;
+        3)
+            echo -n "Enter the port number to block from external access: "
+            read -r custom_port
+            if [[ "$custom_port" =~ ^[0-9]+$ ]]; then
+                print_status "info" "Injecting block rule for port $custom_port..."
+                if iptables -I DOCKER-USER -i "$pub_interface" -p tcp --dport "$custom_port" -j DROP 2>/dev/null; then
+                    log_message "ACTION" "Blocked external access to Docker port $custom_port on interface $pub_interface"
+                    print_status "success" "Port $custom_port successfully blocked from the internet!"
+                    
+                    echo -e ""
+                    print_status "info" "Save rule permanently? [Y/n]: "
+                    read -r save_confirm
+                    if [[ "$save_confirm" != "n" && "$save_confirm" != "N" ]]; then
+                        if command -v netfilter-persistent &>/dev/null; then
+                            netfilter-persistent save 2>/dev/null
+                        else
+                            apt-get update -y && apt-get install -y iptables-persistent
+                            netfilter-persistent save 2>/dev/null
+                        fi
+                        print_status "success" "Rules saved successfully!"
+                    fi
+                else
+                    print_status "danger" "Failed to block port."
+                fi
+            else
+                print_status "danger" "Invalid port number."
+            fi
+            ;;
+        0|*)
+            print_status "info" "Remediation skipped. Ports remain publicly exposed."
+            ;;
+    esac
+}
+
 check_ports_firewall() {
     print_status "step" "Auditing Listening Ports, UFW Firewall & Docker Exposures..."
     log_message "INFO" "Auditing ports and firewall rules."
@@ -47,7 +152,6 @@ check_ports_firewall() {
             while read -r proto state local_addr remote_addr process; do
                 [[ "$proto" == "Netid" || -z "$local_addr" ]] && continue
                 
-                # Extract port from local address
                 local port
                 port=$(echo "$local_addr" | awk -F':' '{print $NF}')
                 local bind_ip
@@ -59,15 +163,13 @@ check_ports_firewall() {
                     pname=$(echo "$process" | grep -o -E '"[^"]+"' | head -n 1 | tr -d '"')
                 fi
 
-                # Flag public exposures (0.0.0.0 or *) for sensitive ports
                 local is_public=0
                 if [[ "$bind_ip" == "0.0.0.0" || "$bind_ip" == "*" || "$bind_ip" == "[::]" ]]; then
                     is_public=1
                 fi
 
                 if [[ "$is_public" -eq 1 ]]; then
-                    # Highlight sensitive publicly exposed ports
-                    if [[ "$port" =~ ^(22|3306|5432|6379|27017|9200|8080)$ ]]; then
+                    if [[ "$port" =~ ^(22|3306|5432|5433|6379|27017|9200|8080)$ ]]; then
                         printf "${C_BRED}%-6s %-25s %-12s %-25s${C_RESET} ${C_RED}(PUBLIC EXPOSURE!)${C_RESET}\n" \
                             "$proto" "$local_addr" "$port" "$pname ($pid)"
                     else
@@ -80,7 +182,6 @@ check_ports_firewall() {
                 fi
             done < <(ss -tulnp 2>/dev/null)
         else
-            # netstat
             netstat -tulnp 2>/dev/null | grep LISTEN | while read -r proto recv_q send_q local_addr remote_addr state process; do
                 [[ -z "$local_addr" ]] && continue
                 local port bind_ip pid pname
@@ -91,7 +192,7 @@ check_ports_firewall() {
                 pname=$(echo "$process" | cut -d'/' -f2-)
 
                 if [[ "$bind_ip" == "0.0.0.0" || "$bind_ip" == "*" || "$bind_ip" == "[::]" ]]; then
-                    if [[ "$port" =~ ^(22|3306|5432|6379|27017|9200|8080)$ ]]; then
+                    if [[ "$port" =~ ^(22|3306|5432|5433|6379|27017|9200|8080)$ ]]; then
                         printf "${C_BRED}%-6s %-25s %-12s %-25s${C_RESET} ${C_RED}(PUBLIC EXPOSURE!)${C_RESET}\n" \
                             "$proto" "$local_addr" "$port" "$pname ($pid)"
                     else
@@ -121,11 +222,9 @@ check_ports_firewall() {
             if [[ -n "$containers" ]]; then
                 echo -e "$containers"
                 
-                # Check for public binding database/sensitive ports inside docker
                 local dangerous_bindings=0
                 docker ps --format "{{.Names}} {{.Ports}}" 2>/dev/null | while read -r name ports; do
-                    # Look for 0.0.0.0 or [::] bindings to databases
-                    if echo "$ports" | grep -qE "0.0.0.0:(3306|5432|6379|27017|9200|8080|22)->"; then
+                    if echo "$ports" | grep -qE "0.0.0.0:(3306|5432|5433|6379|27017|9200|8080|22)->"; then
                         local bound_port
                         bound_port=$(echo "$ports" | grep -o -E "0.0.0.0:[0-9]+" | cut -d':' -f2)
                         dangerous_bindings=$((dangerous_bindings + 1))
@@ -134,7 +233,6 @@ check_ports_firewall() {
                         print_status "danger" "DOCKER BYPASS VULNERABILITY: Container '$name' exposes port $bound_port to 0.0.0.0!"
                         print_status "bullet" "CRITICAL RATIONALE: Docker automatically writes raw iptables rules."
                         print_status "bullet" "Even if UFW status is ACTIVE, Docker's rules bypass UFW completely!"
-                        print_status "bullet" "Tin tặc có thể quét thấy và tấn công trực tiếp vào database trong container này."
                     fi
                 done
                 
@@ -143,6 +241,9 @@ check_ports_firewall() {
                 else
                     print_status "warn" "Exposed ports identified! Recommendation: Sửa file docker-compose.yml"
                     print_status "bullet" "Thay đổi '- p 3306:3306' thành '- p 127.0.0.1:3306:3306' rồi restart container."
+                    
+                    # Trigger interactive SOAR wizard!
+                    remediate_docker_ports
                 fi
             else
                 print_status "info" "Docker daemon is active but no containers are currently running."
