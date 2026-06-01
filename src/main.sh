@@ -652,6 +652,12 @@ live_security_dashboard() {
 main_menu() {
     check_root
     
+    if [[ "${SHOW_UPDATE_SUCCESS:-0}" -eq 1 ]]; then
+        print_status "success" "Security Toolkit successfully updated to the latest version!"
+        SHOW_UPDATE_SUCCESS=0
+        sleep 2
+    fi
+    
     while true; do
         banner
         print_header
@@ -760,6 +766,12 @@ main_menu() {
         esac
     done
 }
+
+# Check for updated flag
+if [[ "${1:-}" == "--updated" ]]; then
+    SHOW_UPDATE_SUCCESS=1
+    shift
+fi
 
 # Check for silent cron execution mode
 if [[ "${1:-}" == "--cron" || "${1:-}" == "-c" ]]; then

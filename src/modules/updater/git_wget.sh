@@ -11,13 +11,9 @@ update_tool() {
         print_status "info" "Detected Git repository. Running fetch and reset..."
         
         git fetch --all 2>&1
-        if git reset --hard origin/main 2>&1; then
-            chmod +x sec.sh
-            print_status "success" "Tool updated successfully via Git!"
-            log_message "INFO" "Tool updated via Git."
-            print_status "info" "Reloading tool process..."
-            sleep 1.5
-            exec bash "$0"
+        # Run reset and immediately exec on the same line to prevent bash lazily reading a modified file
+        if git reset --hard origin/main 2>&1 && exec bash "$0" --updated; then
+            :
         else
             print_status "danger" "Git update failed! Please check your network or git configuration."
             press_any_key
@@ -40,11 +36,8 @@ update_tool() {
             if grep -q "LINUX SERVER SECURITY TOOLKIT" "$tmp_file"; then
                 mv "$tmp_file" "$0"
                 chmod +x "$0"
-                print_status "success" "Standalone tool updated successfully from GitHub!"
-                log_message "INFO" "Standalone tool updated from GitHub."
-                print_status "info" "Reloading tool process..."
-                sleep 1.5
-                exec bash "$0"
+                # Exec immediately to prevent bash lazy-reading corruption of the running script
+                exec bash "$0" --updated
             else
                 print_status "danger" "Downloaded file is corrupted or invalid! Update aborted."
                 rm -f "$tmp_file"

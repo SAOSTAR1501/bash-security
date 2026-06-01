@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ======================================================================
 #          LINUX SERVER SECURITY TOOLKIT (Miner & Malware Scanner)
-#                 Compiled production build: 2026-06-01 15:08:59
+#                 Compiled production build: 2026-06-01 15:11:51
 #                 Source Architecture: MVC Modular / Domain-Driven
 # ======================================================================
 set -o pipefail
@@ -1666,13 +1666,9 @@ update_tool() {
         print_status "info" "Detected Git repository. Running fetch and reset..."
         
         git fetch --all 2>&1
-        if git reset --hard origin/main 2>&1; then
-            chmod +x sec.sh
-            print_status "success" "Tool updated successfully via Git!"
-            log_message "INFO" "Tool updated via Git."
-            print_status "info" "Reloading tool process..."
-            sleep 1.5
-            exec bash "$0"
+        # Run reset and immediately exec on the same line to prevent bash lazily reading a modified file
+        if git reset --hard origin/main 2>&1 && exec bash "$0" --updated; then
+            :
         else
             print_status "danger" "Git update failed! Please check your network or git configuration."
             press_any_key
@@ -1695,11 +1691,8 @@ update_tool() {
             if grep -q "LINUX SERVER SECURITY TOOLKIT" "$tmp_file"; then
                 mv "$tmp_file" "$0"
                 chmod +x "$0"
-                print_status "success" "Standalone tool updated successfully from GitHub!"
-                log_message "INFO" "Standalone tool updated from GitHub."
-                print_status "info" "Reloading tool process..."
-                sleep 1.5
-                exec bash "$0"
+                # Exec immediately to prevent bash lazy-reading corruption of the running script
+                exec bash "$0" --updated
             else
                 print_status "danger" "Downloaded file is corrupted or invalid! Update aborted."
                 rm -f "$tmp_file"
@@ -2370,6 +2363,12 @@ live_security_dashboard() {
 main_menu() {
     check_root
     
+    if [[ "${SHOW_UPDATE_SUCCESS:-0}" -eq 1 ]]; then
+        print_status "success" "Security Toolkit successfully updated to the latest version!"
+        SHOW_UPDATE_SUCCESS=0
+        sleep 2
+    fi
+    
     while true; do
         banner
         print_header
@@ -2478,6 +2477,12 @@ main_menu() {
         esac
     done
 }
+
+# Check for updated flag
+if [[ "${1:-}" == "--updated" ]]; then
+    SHOW_UPDATE_SUCCESS=1
+    shift
+fi
 
 # Check for silent cron execution mode
 if [[ "${1:-}" == "--cron" || "${1:-}" == "-c" ]]; then
