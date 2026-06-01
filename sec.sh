@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ======================================================================
 #          LINUX SERVER SECURITY TOOLKIT (Miner & Malware Scanner)
-#                 Compiled production build: 2026-06-01 15:02:22
+#                 Compiled production build: 2026-06-01 15:05:33
 #                 Source Architecture: MVC Modular / Domain-Driven
 # ======================================================================
 set -o pipefail
@@ -74,6 +74,10 @@ send_lark_notification() {
     local title="$1"
     local text="$2"
     local level="${3:-info}" # info, success, warn, danger
+    local is_test="${4:-false}"
+    
+    # Always reload config from disk to get the most up-to-date variables
+    [[ -f "/etc/sec-toolkit/config.env" ]] && source "/etc/sec-toolkit/config.env" 2>/dev/null
     
     # Only execute if ENABLE_LARK is true and webhook URL is configured
     if [[ "${ENABLE_LARK:-}" == "true" && -n "${LARK_WEBHOOK_URL:-}" ]]; then
@@ -89,7 +93,7 @@ send_lark_notification() {
         local hostname
         hostname=$(hostname)
         local server_ip
-        server_ip=$(curl -s https://api.ipify.org || hostname -I | awk '{print $1}')
+        server_ip=$(curl -s --max-time 1.5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
         local date_time
         date_time=$(date "+%Y-%m-%d %H:%M:%S")
         local uptime_val
@@ -179,7 +183,7 @@ card = {
 }
 print(json.dumps(card))
 ' "$title" "$text" "$level" "$header_color" "$hostname" "$server_ip" "$uptime_val" "$date_time" 2>/dev/null)
-
+ 
         # Fallback to jq if python3 fails, or if python3 is not available
         if [[ -z "$payload" ]]; then
             if command -v jq &>/dev/null; then
@@ -224,8 +228,25 @@ print(json.dumps(card))
                 payload="{\"msg_type\":\"text\",\"content\":{\"text\":\"$json_safe_msg\"}}"
             fi
         fi
-
-        curl -s -X POST -H "Content-Type: application/json" -d "$payload" "$webhook_url" &>/dev/null &
+ 
+        if [[ "$is_test" == "true" ]]; then
+            # Run in foreground synchronously and capture response for immediate debugging
+            echo -e "${C_CYAN}[*] Sending synchronous HTTP POST request to Lark...${C_RESET}"
+            local response
+            response=$(curl -s -i -X POST -H "Content-Type: application/json" -d "$payload" "$webhook_url" 2>&1)
+            
+            echo -e "${C_CYAN}[*] Lark Webhook response output:${C_RESET}"
+            echo "$response" | sed 's/^/   | /'
+            
+            if echo "$response" | grep -q -E "200 OK|200 Success|\"code\":0"; then
+                print_status "success" "Lark Webhook delivered successfully!"
+            else
+                print_status "danger" "Lark server rejected the request. Please check the error code above."
+            fi
+        else
+            # Run silently in the background
+            curl -s -X POST -H "Content-Type: application/json" -d "$payload" "$webhook_url" &>/dev/null &
+        fi
     fi
 }
 
@@ -2090,7 +2111,7 @@ configure_notifications() {
             3)
                 if [[ "${ENABLE_LARK:-}" == "true" && -n "${LARK_WEBHOOK_URL:-}" ]]; then
                     print_status "info" "Sending test interactive card to Lark..."
-                    send_lark_notification "Lark Card Test Success" "Lark Alert Webhook is fully verified and connected to $(hostname)!" "success"
+                    send_lark_notification "Lark Card Test Success" "Lark Alert Webhook is fully verified and connected to $(hostname)!" "success" "true"
                 else
                     print_status "danger" "Cannot send test. Lark Notifications are disabled or Webhook URL is missing."
                 fi

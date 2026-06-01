@@ -393,7 +393,7 @@ configure_notifications() {
             3)
                 if [[ "${ENABLE_LARK:-}" == "true" && -n "${LARK_WEBHOOK_URL:-}" ]]; then
                     print_status "info" "Sending test interactive card to Lark..."
-                    send_lark_notification "Lark Card Test Success" "Lark Alert Webhook is fully verified and connected to $(hostname)!" "success"
+                    send_lark_notification "Lark Card Test Success" "Lark Alert Webhook is fully verified and connected to $(hostname)!" "success" "true"
                 else
                     print_status "danger" "Cannot send test. Lark Notifications are disabled or Webhook URL is missing."
                 fi
