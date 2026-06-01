@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ======================================================================
 #          LINUX SERVER SECURITY TOOLKIT (Miner & Malware Scanner)
-#                 Compiled production build: 2026-06-01 11:35:19
+#                 Compiled production build: 2026-06-01 11:43:57
 #                 Source Architecture: MVC Modular / Domain-Driven
 # ======================================================================
 set -o pipefail
@@ -603,7 +603,7 @@ check_network_connections() {
     port_regex=$(echo "${MINING_PORTS[@]}" | tr ' ' '|')
 
     if [[ "$net_tool" == "ss" ]]; then
-        while read -r proto state local_addr remote_addr process; do
+        while read -r proto state recv_q send_q local_addr remote_addr process; do
             [[ "$proto" == "Netid" || -z "$remote_addr" ]] && continue
             
             local rport
@@ -825,7 +825,7 @@ check_ports_firewall() {
         echo -e "${C_GRAY}----------------------------------------------------------------------------------${C_RESET}"
         
         if [[ "$net_tool" == "ss" ]]; then
-            while read -r proto state local_addr remote_addr process; do
+            while read -r proto state recv_q send_q local_addr remote_addr process; do
                 [[ "$proto" == "Netid" || -z "$local_addr" ]] && continue
                 
                 local port

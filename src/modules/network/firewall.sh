@@ -149,7 +149,7 @@ check_ports_firewall() {
         echo -e "${C_GRAY}----------------------------------------------------------------------------------${C_RESET}"
         
         if [[ "$net_tool" == "ss" ]]; then
-            while read -r proto state local_addr remote_addr process; do
+            while read -r proto state recv_q send_q local_addr remote_addr process; do
                 [[ "$proto" == "Netid" || -z "$local_addr" ]] && continue
                 
                 local port
