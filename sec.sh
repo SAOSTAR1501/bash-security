@@ -977,7 +977,7 @@ audit_ssh_keys() {
             fi
 
             local first_line
-            first_line=$(head -n 1 "$file_path" 2>/dev/null)
+            first_line=$(head -n 1 "$file_path" 2>/dev/null | tr -d '\0')
             
             for h in "${headers[@]}"; do
                 if [[ "$first_line" == *"$h"* ]]; then

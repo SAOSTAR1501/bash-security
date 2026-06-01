@@ -93,9 +93,9 @@ audit_ssh_keys() {
                 continue
             fi
 
-            # Read first line to inspect header
+            # Read first line to inspect header, removing null bytes to avoid console warnings
             local first_line
-            first_line=$(head -n 1 "$file_path" 2>/dev/null)
+            first_line=$(head -n 1 "$file_path" 2>/dev/null | tr -d '\0')
             
             for h in "${headers[@]}"; do
                 if [[ "$first_line" == *"$h"* ]]; then
