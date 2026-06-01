@@ -152,3 +152,4 @@ check_system_integrity() {
     else
         print_status "danger" "Hosts static mapping file '/etc/hosts' is completely MISSING!"
     fi
+}
