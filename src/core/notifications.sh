@@ -20,6 +20,7 @@ EOF
 run_cron_scan() {
     local is_test="${1:-false}"
     local BR="<br>"
+    local soar_actions=""
     
     # Initialize configuration from persistent OS directory
     [[ -f "/etc/sec-toolkit/config.env" ]] && source "/etc/sec-toolkit/config.env" 2>/dev/null
@@ -151,6 +152,33 @@ run_cron_scan() {
         failed_logins=$(grep -i "failed password" "$auth_l" 2>/dev/null | wc -l)
         if [[ "$failed_logins" -gt 0 ]]; then
             failed_ips=$(grep -i "failed password" "$auth_l" 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | sort | uniq -c | sort -nr | head -n 3 | awk '{print "    * IP: " $2 " - " $1 " attempts"}' | tr '\n' ',' | sed 's/,$//' | sed 's/,/<br>/g')
+            
+            # --- ACTIVE SOAR: SSH Brute-Force Autoblocking ---
+            while read -r count ip; do
+                if [[ -n "$ip" && "$count" -gt 15 ]]; then
+                    if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                        # Whitelist sanity checks
+                        if [[ "$ip" == "127.0.0.1" || "$ip" == "0.0.0.0" ]]; then
+                            continue
+                        fi
+                        
+                        # Check firewall rules
+                        if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+                            if ! ufw status numbered 2>/dev/null | grep -Fq "$ip"; then
+                                ufw insert 1 deny from "$ip" to any &>/dev/null
+                                soar_actions+="  🛡️ **Auto-blocked IP (UFW)**: \`$ip\` ($count failed attempts)${BR}"
+                                log_message "WARNING" "Active SOAR: Automatically blocked IP $ip via UFW ($count failed attempts)"
+                            fi
+                        else
+                            if ! iptables -S 2>/dev/null | grep -Fq "$ip"; then
+                                iptables -I INPUT -s "$ip" -j DROP &>/dev/null
+                                soar_actions+="  🛡️ **Auto-blocked IP (iptables)**: \`$ip\` ($count failed attempts)${BR}"
+                                log_message "WARNING" "Active SOAR: Automatically blocked IP $ip via iptables ($count failed attempts)"
+                            fi
+                        fi
+                    fi
+                fi
+            done < <(grep -i "failed password" "$auth_l" 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | sort | uniq -c | sort -nr | awk '$1 > 15 {print $1, $2}')
         fi
     fi
     local ssh_bf_tag="🟢 Clean (0 failed)"
@@ -274,7 +302,30 @@ run_cron_scan() {
         done
         
         local susp_label=""
-        [[ "$is_sus" -eq 1 ]] && susp_label=" 🔥 [SUSPICIOUS]"
+        if [[ "$is_sus" -eq 1 ]]; then
+            susp_label=" 🔥 [SUSPICIOUS]"
+            
+            # --- ACTIVE SOAR: Cryptojacker / Suspicious High-CPU Process Auto-Freezing ---
+            local cpu_int=0
+            if [[ -n "$cpu" ]]; then
+                cpu_int=$(echo "$cpu" | cut -d'.' -f1)
+            fi
+            
+            if [[ "$cpu_int" -ge 80 ]]; then
+                local proc_state=""
+                proc_state=$(ps -q "$pid" -o state= 2>/dev/null | tr -d '[:space:]')
+                if [[ "$proc_state" != "T" ]]; then
+                    if kill -STOP "$pid" 2>/dev/null; then
+                        soar_actions+="  ❄️ **Auto-frozen Process**: PID \`$pid\` (\`$comm\` • CPU: \`$cpu%\`)${BR}     ├─ Path  : \`$exe_path\`${BR}     └─ Status: Suspended (SIGSTOP). Memory preserved for forensics.${BR}"
+                        log_message "WARNING" "Active SOAR: Automatically suspended suspicious high-resource process PID $pid ($comm, CPU $cpu%) using SIGSTOP"
+                        susp_label=" ❄️ [AUTO-FROZEN]"
+                    fi
+                else
+                    susp_label=" ❄️ [FROZEN]"
+                fi
+            fi
+        fi
+        
         susp_proc+="  ├─ PID \`$pid\` ($user): \`$comm\` (\`$cpu%\` CPU)${susp_label} -> \`${exe_path:-deleted/unknown}\`${BR}"
     done < <(ps -eo pid,user,%cpu,comm --sort=-%cpu 2>/dev/null | head -n 6 | tail -n 5)
     
@@ -303,11 +354,20 @@ run_cron_scan() {
         audit_text+="**⛏️ OUTBOUND MINING STRATUM POOLS DETECTED:**${BR}$stratum_conns${BR}"
     fi
     
+    # Format Active SOAR Automation Actions into audit_text
+    if [[ -n "$soar_actions" ]]; then
+        soar_actions=$(echo "$soar_actions" | sed 's/<br>$//')
+        audit_text+="**🛡️ ACTIVE SOAR AUTOMATION DEFENSES:**${BR}$soar_actions${BR}${BR}"
+    fi
+
     # Determine alert level and title template
     local alert_level="success"
     local alert_title="Daily Server Health: ALL SYSTEMS NORMAL"
     
-    if [[ -n "$socket_mounts" || -n "$dangerous_ports" || -n "$stratum_conns" || "$suid_count" -gt 0 || "$log_tampered" -eq 1 || "$sudo_count" -gt 0 || "$failed_logins" -gt 15 ]]; then
+    if [[ -n "$soar_actions" ]]; then
+        alert_level="danger"
+        alert_title="VPS SECURITY ALERT: Active SOAR Auto-Defenses Triggered!"
+    elif [[ -n "$socket_mounts" || -n "$dangerous_ports" || -n "$stratum_conns" || "$suid_count" -gt 0 || "$log_tampered" -eq 1 || "$sudo_count" -gt 0 || "$failed_logins" -gt 15 ]]; then
         alert_level="danger"
         alert_title="VPS SECURITY ALERT: Critical Threats Detected!"
     elif [[ -n "$susp_proc" && "$susp_proc" == *"🔥 [SUSPICIOUS]"* ]]; then

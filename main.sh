@@ -13,6 +13,7 @@ source "${SCRIPT_DIR}/src/core/colors.sh"
 source "${SCRIPT_DIR}/src/core/logger.sh"
 source "${SCRIPT_DIR}/src/core/root.sh"
 source "${SCRIPT_DIR}/src/core/ui.sh"
+source "${SCRIPT_DIR}/src/core/chatops_service.sh"
 
 # 2. SECURITY MODULES
 source "${SCRIPT_DIR}/src/modules/system/sys_info.sh"
