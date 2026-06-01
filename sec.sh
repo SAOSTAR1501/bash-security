@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ======================================================================
 #          LINUX SERVER SECURITY TOOLKIT (Miner & Malware Scanner)
-#                 Compiled production build: 2026-06-01 14:36:52
+#                 Compiled production build: 2026-06-01 14:42:55
 #                 Source Architecture: MVC Modular / Domain-Driven
 # ======================================================================
 set -o pipefail
@@ -2045,9 +2045,11 @@ live_security_dashboard() {
                 cpu_bar+="${C_GRAY}.${C_RESET}"
             fi
         done
+        local cpu_bar_eval
+        cpu_bar_eval=$(echo -e "$cpu_bar")
         local cpu_color="$C_BGREEN"
         if [[ "$cpu_pct" -ge 80 ]]; then cpu_color="$C_BRED"; elif [[ "$cpu_pct" -ge 50 ]]; then cpu_color="$C_BYELLOW"; fi
-        printf " ${C_BOLD}CPU Usage:${C_RESET}  [%-20s] ${cpu_color}%d%%${C_RESET}\n" "$cpu_bar" "$cpu_pct"
+        printf " ${C_BOLD}CPU Usage:${C_RESET}  [%s] ${cpu_color}%d%%${C_RESET}\n" "$cpu_bar_eval" "$cpu_pct"
         
         # RAM
         local mem_total=$(free -m | awk '/^Mem:/{print $2}' 2>/dev/null)
@@ -2070,9 +2072,11 @@ live_security_dashboard() {
                 mem_bar+="${C_GRAY}.${C_RESET}"
             fi
         done
+        local mem_bar_eval
+        mem_bar_eval=$(echo -e "$mem_bar")
         local mem_color="$C_BGREEN"
         if [[ "$mem_pct" -ge 90 ]]; then mem_color="$C_BRED"; elif [[ "$mem_pct" -ge 70 ]]; then mem_color="$C_BYELLOW"; fi
-        printf " ${C_BOLD}RAM Usage:${C_RESET}  [%-20s] ${mem_color}%d%%${C_RESET} (%sMB/%sMB)\n" "$mem_bar" "$mem_pct" "$mem_used" "$mem_total"
+        printf " ${C_BOLD}RAM Usage:${C_RESET}  [%s] ${mem_color}%d%%${C_RESET} (%sMB/%sMB)\n" "$mem_bar_eval" "$mem_pct" "$mem_used" "$mem_total"
         
         # Load Average
         local load_avg=$(cat /proc/loadavg 2>/dev/null | awk '{print $1" "$2" "$3}')
@@ -2096,9 +2100,11 @@ live_security_dashboard() {
                 disk_bar+="${C_GRAY}.${C_RESET}"
             fi
         done
+        local disk_bar_eval
+        disk_bar_eval=$(echo -e "$disk_bar")
         local disk_color="$C_BGREEN"
         if [[ "$disk_pct" -ge 85 ]]; then disk_color="$C_BRED"; elif [[ "$disk_pct" -ge 70 ]]; then disk_color="$C_BYELLOW"; fi
-        printf " ${C_BOLD}Disk /   :${C_RESET}  [%-20s] ${disk_color}%d%%${C_RESET}\n" "$disk_bar" "$disk_pct"
+        printf " ${C_BOLD}Disk /   :${C_RESET}  [%s] ${disk_color}%d%%${C_RESET}\n" "$disk_bar_eval" "$disk_pct"
         
         echo -e "${C_GRAY}----------------------------------------------------------------------${C_RESET}"
         echo -e " 🚨 ${C_BWHITE}SECURITY SHIELD STATUS & ALERTS${C_RESET}"
