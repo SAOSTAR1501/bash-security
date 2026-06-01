@@ -54,8 +54,8 @@ send_lark_notification() {
         local payload
         payload=$(python3 -c '
 import sys, json
-title = sys.argv[1]
-text = sys.argv[2]
+title = sys.argv[1].replace("\\n", " ").replace("\n", " ")
+text = sys.argv[2].replace("\\n", "<br>").replace("\n", "<br>")
 level = sys.argv[3]
 color = sys.argv[4]
 hname = sys.argv[5]
@@ -74,7 +74,7 @@ card = {
             "template": color,
             "title": {
                 "tag": "plain_text",
-                "content": f"🚨 SECURITY ALERT: {hname}" if level == "danger" else f"🛡️ SECURITY UPDATE: {hname}"
+                "content": title
             }
         },
         "elements": [
@@ -85,28 +85,28 @@ card = {
                         "is_short": True,
                         "text": {
                             "tag": "lark_md",
-                            "content": f"**🖥️ Hostname:**\n{hname}"
+                            "content": f"**🖥️ Hostname:**<br>{hname}"
                         }
                     },
                     {
                         "is_short": True,
                         "text": {
                             "tag": "lark_md",
-                            "content": f"**🌐 Public IP:**\n{ip}"
+                            "content": f"**🌐 Public IP:**<br>{ip}"
                         }
                     },
                     {
                         "is_short": True,
                         "text": {
                             "tag": "lark_md",
-                            "content": f"**⏱️ Uptime:**\n{uptime}"
+                            "content": f"**⏱️ Uptime:**<br>{uptime}"
                         }
                     },
                     {
                         "is_short": True,
                         "text": {
                             "tag": "lark_md",
-                            "content": f"**📅 Time:**\n{dtime}"
+                            "content": f"**📅 Time:**<br>{dtime}"
                         }
                     }
                 ]
@@ -116,7 +116,7 @@ card = {
                 "tag": "div",
                 "text": {
                     "tag": "lark_md",
-                    "content": f"{text}"
+                    "content": text
                 }
             },
             {"tag": "hr"},
@@ -152,20 +152,20 @@ print(json.dumps(card))
                             config: { wide_screen_mode: true, enable_forward: true },
                             header: {
                                 template: $color,
-                                title: { tag: "plain_text", content: ("🛡️ SECURITY REPORT: " + $hname) }
+                                title: { tag: "plain_text", content: $title }
                             },
                             elements: [
                                 {
                                     tag: "div",
                                     fields: [
-                                        { is_short: true, text: { tag: "lark_md", content: ("**🖥️ Hostname:**\n" + $hname) } },
-                                        { is_short: true, text: { tag: "lark_md", content: ("**🌐 Public IP:**\n" + $ip) } },
-                                        { is_short: true, text: { tag: "lark_md", content: ("**⏱️ Uptime:**\n" + $uptime) } },
-                                        { is_short: true, text: { tag: "lark_md", content: ("**📅 Time:**\n" + $dtime) } }
+                                        { is_short: true, text: { tag: "lark_md", content: ("**🖥️ Hostname:**<br>" + $hname) } },
+                                        { is_short: true, text: { tag: "lark_md", content: ("**🌐 Public IP:**<br>" + $ip) } },
+                                        { is_short: true, text: { tag: "lark_md", content: ("**⏱️ Uptime:**<br>" + $uptime) } },
+                                        { is_short: true, text: { tag: "lark_md", content: ("**📅 Time:**<br>" + $dtime) } }
                                     ]
                                 },
                                 { tag: "hr" },
-                                { tag: "div", text: { tag: "lark_md", content: ($text) } },
+                                { tag: "div", text: { tag: "lark_md", content: $text } },
                                 { tag: "hr" },
                                 { tag: "note", elements: [{ tag: "plain_text", content: "💡 Linux Server Security Toolkit" }] }
                             ]
@@ -174,6 +174,8 @@ print(json.dumps(card))
             else
                 # Safe plain text fallback
                 local full_msg="🛡️ [SECURITY REPORT: $hostname]\nTitle: $title\nTime: $date_time\nIP: $server_ip\n------------------\n$text"
+                # Convert <br> back to \n for standard text message format
+                full_msg=$(echo "$full_msg" | sed 's/<br>/\n/g')
                 local json_safe_msg
                 json_safe_msg=$(echo "$full_msg" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')
                 payload="{\"msg_type\":\"text\",\"content\":{\"text\":\"$json_safe_msg\"}}"

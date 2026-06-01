@@ -19,6 +19,7 @@ EOF
 # Automated Cron Alert scan (Silent, non-interactive execution)
 run_cron_scan() {
     local is_test="${1:-false}"
+    local BR="<br>"
     
     # Initialize configuration from persistent OS directory
     [[ -f "/etc/sec-toolkit/config.env" ]] && source "/etc/sec-toolkit/config.env" 2>/dev/null
@@ -36,17 +37,16 @@ run_cron_scan() {
     local os_desc
     os_desc=$(lsb_release -ds 2>/dev/null || cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2 | tr -d '"' || uname -sr)
     local cpu_model
-    cpu_model=$(lscpu 2>/dev/null | grep "Model name:" | sed 's/Model name:\s*//' || echo "Unknown CPU")
+    cpu_model=$(lscpu 2>/dev/null | grep "Model name:" | sed 's/Model name:\s*//' | sed 's/\s\+/ /g' || echo "Unknown CPU")
     
-    audit_text+="**🖥️ System Configuration Overview:**\n"
-    audit_text+="* OS Distro: \`$os_desc\`\n"
-    audit_text+="* CPU Model: \`$cpu_model\`\n"
+    audit_text+="**🖥️ SYSTEM CONFIGURATION & HARDWARE:**${BR}"
+    audit_text+="├─ Operating System : \`$os_desc\`${BR}"
+    audit_text+="└─ CPU Processor    : \`$cpu_model\`${BR}${BR}"
     
     # Resources (Load, RAM, Disk)
     local load_avg cpu_cores
     load_avg=$(cat /proc/loadavg 2>/dev/null | awk '{print $1" "$2" "$3}')
     cpu_cores=$(nproc 2>/dev/null || echo "1")
-    audit_text+="* Load Average: \`$load_avg\` (Cores: $cpu_cores)\n"
     
     local mem_total mem_used mem_pct
     mem_total=$(free -m | awk '/^Mem:/{print $2}' 2>/dev/null)
@@ -54,29 +54,42 @@ run_cron_scan() {
     [[ -z "$mem_total" ]] && mem_total=1
     [[ -z "$mem_used" ]] && mem_used=0
     mem_pct=$(( mem_used * 100 / mem_total ))
-    audit_text+="* RAM Resource: \`${mem_used}MB / ${mem_total}MB (${mem_pct}%)\`\n"
     
-    local disk_usage
+    local disk_usage disk_total
     disk_usage=$(df -h / | tail -n 1 | awk '{print $5}' 2>/dev/null)
-    audit_text+="* Disk Partition: \`$disk_usage\` on \`/\`\n\n"
+    disk_total=$(df -h / | tail -n 1 | awk '{print $2}' 2>/dev/null)
+    
+    audit_text+="**📊 REAL-TIME CORE RESOURCE METRICS:**${BR}"
+    audit_text+="├─ CPU Load Average : \`$load_avg\` (Cores: $cpu_cores)${BR}"
+    audit_text+="├─ Memory Resource  : \`${mem_used}MB / ${mem_total}MB (${mem_pct}%)\`${BR}"
+    audit_text+="└─ Disk Partition   : \`$disk_usage\` used of \`$disk_total\` on \`/\`${BR}${BR}"
     
     # 2. Host Detailed Security Configurations
     local ufw_status="INACTIVE"
     command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active" && ufw_status="ACTIVE"
+    
+    local ufw_tag="🔴 INACTIVE"
+    [[ "$ufw_status" == "ACTIVE" ]] && ufw_tag="🟢 ACTIVE"
     
     local ssh_port
     ssh_port=$(grep -i '^Port ' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "22")
     local ssh_root_login
     ssh_root_login=$(grep -i '^PermitRootLogin' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "yes (default)")
     
+    local ssh_root_tag="\`$ssh_root_login\`"
+    if [[ "$ssh_root_login" == "yes" || "$ssh_root_login" == "yes (default)" ]]; then
+        ssh_root_tag="\`$ssh_root_login\` ⚠️ (HIGH RISK)"
+    fi
+    
     local logged_users
     logged_users=$(who 2>/dev/null | awk '{print $1" ("$2" "$5")"}' | tr '\n' ',' | sed 's/,$//')
-    [[ -z "$logged_users" ]] && logged_users="None"
+    [[ -z "$logged_users" ]] && logged_users="None (No active sessions)"
     
-    audit_text+="**🛡️ Host Security Configuration Details:**\n"
-    audit_text+="* UFW Firewall Status: \`$ufw_status\`\n"
-    audit_text+="* SSH Port: \`$ssh_port\` | Permit Root Login: \`$ssh_root_login\`\n"
-    audit_text+="* Logged-in Users: \`$logged_users\`\n\n"
+    audit_text+="**🛡️ HOST SECURITY CONFIGURATIONS:**${BR}"
+    audit_text+="├─ UFW Firewall Status  : $ufw_tag${BR}"
+    audit_text+="├─ SSH Configured Port  : \`$ssh_port\`${BR}"
+    audit_text+="├─ SSH Permit Root Login: $ssh_root_tag${BR}"
+    audit_text+="└─ Active Logged-in Users: \`$logged_users\`${BR}${BR}"
     
     # 3. Docker Running Containers & Resources
     local container_list=""
@@ -93,7 +106,7 @@ run_cron_scan() {
             local c_status=$(echo "$line" | awk -F'||' '{print $3}')
             local c_ports=$(echo "$line" | awk -F'||' '{print $4}')
             [[ -z "$c_ports" ]] && c_ports="None"
-            container_list+="  * **${c_name}** (\`${c_id}\`): \`${c_status}\` | Ports: \`$c_ports\`\n"
+            container_list+="  ├─ **${c_name}** (\`${c_id}\`): \`${c_status}\` (Ports: \`$c_ports\`)${BR}"
         done < <(docker ps --format "{{.Names}}||{{.ID}}||{{.Status}}||{{.Ports}}" 2>/dev/null)
         
         # Container resource stats
@@ -102,7 +115,7 @@ run_cron_scan() {
             local c_name=$(echo "$line" | awk -F'||' '{print $1}')
             local c_cpu=$(echo "$line" | awk -F'||' '{print $2}')
             local c_mem=$(echo "$line" | awk -F'||' '{print $3}')
-            docker_stats+="  * **${c_name}**: CPU: \`${c_cpu}\` | RAM: \`${c_mem}\`\n"
+            docker_stats+="  ├─ **${c_name}**: CPU \`${c_cpu}\` | RAM \`${c_mem}\`${BR}"
         done < <(docker stats --no-stream --format "{{.Name}}||{{.CPUPerc}}||{{.MemPerc}}" 2>/dev/null)
         
         # Check docker socket mount
@@ -111,7 +124,7 @@ run_cron_scan() {
             local inspect_mounts
             inspect_mounts=$(docker inspect -f '{{range .Mounts}}{{.Source}} -> {{.Destination}} {{end}}' "$cid" 2>/dev/null)
             if echo "$inspect_mounts" | grep -q "docker.sock"; then
-                socket_mounts+="  * Container **$name** (\`$cid\`) mounts \`docker.sock\`! (CRITICAL ESCAPE RISK)\n"
+                socket_mounts+="  ⚠️ **$name** (\`$cid\`) mounts \`docker.sock\`! (CRITICAL ESCAPE RISK)${BR}"
             fi
         done < <(docker ps --format "{{.ID}} {{.Names}}" 2>/dev/null)
         
@@ -121,32 +134,38 @@ run_cron_scan() {
             if echo "$ports" | grep -qE "0.0.0.0:(3306|5432|5433|6379|27017|9200|8080|22)->"; then
                 local bound_port
                 bound_port=$(echo "$ports" | grep -o -E "0.0.0.0:[0-9]+" | cut -d':' -f2)
-                dangerous_ports+="  * Container **$name** exposes database port \`$bound_port\` to 0.0.0.0! (UFW BYPASS)\n"
+                dangerous_ports+="  ⚠️ **$name** exposes database port \`$bound_port\` publicly! (UFW BYPASS)${BR}"
             fi
         done < <(docker ps --format "{{.Names}} {{.Ports}}" 2>/dev/null)
     fi
     
-    audit_text+="**🐳 Running Docker Containers:**\n"
-    if [[ -n "$container_list" ]]; then
-        audit_text+="$container_list"
+    if command -v docker &>/dev/null && [[ $(systemctl is-active docker 2>/dev/null) == "active" ]]; then
+        audit_text+="**🐳 DOCKER ENVIRONMENT AUDIT:**${BR}"
+        if [[ -n "$container_list" ]]; then
+            container_list=$(echo "$container_list" | sed 's/\(.*\)  ├─/\1  └─/')
+            audit_text+="$container_list"
+        else
+            audit_text+="  └─ No running containers.${BR}"
+        fi
+        audit_text+="${BR}"
+        
+        audit_text+="**📊 CONTAINER PERFORMANCE METRICS:**${BR}"
+        if [[ -n "$docker_stats" ]]; then
+            docker_stats=$(echo "$docker_stats" | sed 's/\(.*\)  ├─/\1  └─/')
+            audit_text+="$docker_stats"
+        else
+            audit_text+="  └─ No stats available.${BR}"
+        fi
+        audit_text+="${BR}"
     else
-        audit_text+="  * No running containers.\n"
+        audit_text+="**🐳 DOCKER STATUS:** Not installed or inactive.${BR}${BR}"
     fi
-    audit_text+="\n"
-    
-    audit_text+="**📊 Container Resource Utilization:**\n"
-    if [[ -n "$docker_stats" ]]; then
-        audit_text+="$docker_stats"
-    else
-        audit_text+="  * No stats available.\n"
-    fi
-    audit_text+="\n"
     
     if [[ -n "$socket_mounts" ]]; then
-        audit_text+="**🐳 Critical Docker Vulnerabilities (Leo Thang Quyền Host):**\n$socket_mounts\n"
+        audit_text+="**🚨 CRITICAL CONTAINER ESCAPE THREATS:**${BR}$socket_mounts${BR}"
     fi
     if [[ -n "$dangerous_ports" ]]; then
-        audit_text+="**🌐 Docker Exposed Ports (UFW Bypass Vulnerabilities):**\n$dangerous_ports\n"
+        audit_text+="**🌐 EXPOSED DATABASE PORTS (UFW BYPASS):**${BR}$dangerous_ports${BR}"
     fi
     
     # 4. Top 5 CPU Processes
@@ -164,11 +183,12 @@ run_cron_scan() {
         
         local susp_label=""
         [[ "$is_sus" -eq 1 ]] && susp_label=" 🔥 [SUSPICIOUS]"
-        susp_proc+="  * PID \`$pid\` ($user): \`$comm\` (\`$cpu%\` CPU)${susp_label} -> \`${exe_path:-deleted/unknown}\`\n"
+        susp_proc+="  ├─ PID \`$pid\` ($user): \`$comm\` (\`$cpu%\` CPU)${susp_label} -> \`${exe_path:-deleted/unknown}\`${BR}"
     done < <(ps -eo pid,user,%cpu,comm --sort=-%cpu 2>/dev/null | head -n 6 | tail -n 5)
     
     if [[ -n "$susp_proc" ]]; then
-        audit_text+="**🛑 Top 5 CPU-Consuming/Active Processes:**\n$susp_proc\n"
+        susp_proc=$(echo "$susp_proc" | sed 's/\(.*\)  ├─/\1  └─/')
+        audit_text+="**🛑 TOP 5 ACTIVE PROCESSES (CPU):**${BR}$susp_proc${BR}"
     fi
     
     # 5. Outbound Mining stratum Connections
@@ -181,13 +201,14 @@ run_cron_scan() {
             local rport
             rport=$(echo "$remote_addr" | awk -F':' '{print $NF}')
             if echo "$rport" | grep -q -E "^(${port_regex})$"; then
-                stratum_conns+="  * Outbound mining pool connection: \`$remote_addr\`\n"
+                stratum_conns+="  ├─ Mining pool host: \`$remote_addr\`${BR}"
             fi
         done < <(ss -tupn state established 2>/dev/null)
     fi
     
     if [[ -n "$stratum_conns" ]]; then
-        audit_text+="**⛏️ Outbound Mining Pool Connections:**\n$stratum_conns\n"
+        stratum_conns=$(echo "$stratum_conns" | sed 's/\(.*\)  ├─/\1  └─/')
+        audit_text+="**⛏️ OUTBOUND MINING STRATUM POOLS DETECTED:**${BR}$stratum_conns${BR}"
     fi
     
     # Determine alert level and title template
