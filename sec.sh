@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
 # ======================================================================
 #          LINUX SERVER SECURITY TOOLKIT (Miner & Malware Scanner)
-#                 Designed and coded by Antigravity AI
+#                 Compiled production build: 2026-06-01 09:47:00
+#                 Source Architecture: MVC Modular / Domain-Driven
 # ======================================================================
-# Portable single-file security script to scan, diagnose and remediate
-# cryptojacking miners and persistent server threats.
-#
-# Usage:
-#   sudo bash sec.sh
-# ======================================================================
-
 set -o pipefail
 
-# --- TERMINAL COLORS (ANSI ESCAPES) ---
+# ======================================================================
+# CORE COMPONENT: TERMINAL COLORS
+# ======================================================================
+
+# Formatting Escapes
 C_RESET="\e[0m"
 C_BOLD="\e[1m"
 C_DIM="\e[2m"
@@ -42,25 +40,13 @@ BG_RED="\e[41m"
 BG_YELLOW="\e[43m"
 BG_BLUE="\e[44m"
 
-# --- GLOBAL CONFIGURATION ---
+# ======================================================================
+# CORE COMPONENT: AUDITING LOG SYSTEM
+# ======================================================================
+
 LOG_FILE="/var/log/sec_toolkit.log"
-CPU_THRESHOLD=40 # Flag processes using > 40% CPU
-SUSPICIOUS_PATHS=("/tmp" "/var/tmp" "/dev/shm" "/run/user" "/home" "/var/spool/cron")
-COMMON_MASQUERADE=("mysql" "nginx" "apache2" "httpd" "syslogd" "systemd" "kworker" "sshd" "crond" "init")
 
-# Stratum & Common mining pool ports
-MINING_PORTS=(3333 4444 5555 7777 8888 9999 14444 8008 8080)
-
-# Check root privileges
-check_root() {
-    if [[ $EUID -ne 0 ]]; then
-        echo -e "${C_BRED}[!] ERROR: This toolkit must be run as root (or using sudo).${C_RESET}"
-        echo -e "${C_GRAY}Some systems files, process metrics, and network configurations are hidden from regular users.${C_RESET}"
-        exit 1
-    fi
-}
-
-# Logger
+# Standardized logging to LOG_FILE
 log_message() {
     local level="$1"
     local message="$2"
@@ -69,7 +55,23 @@ log_message() {
     echo "[$timestamp] [$level] $message" >> "$LOG_FILE" 2>/dev/null
 }
 
-# --- UI & FORMATTING HELPERS ---
+# ======================================================================
+# CORE COMPONENT: PRIVILEGE VALIDATOR
+# ======================================================================
+
+# Check root privileges prior to core scans
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        echo -e "${C_BRED}[!] ERROR: This toolkit must be run as root (or using sudo).${C_RESET}"
+        echo -e "${C_GRAY}Some systems files, process metrics, and network configurations are hidden from regular users.${C_RESET}"
+        exit 1
+    fi
+}
+
+# ======================================================================
+# CORE COMPONENT: VISUAL INTERFACE ENGINE
+# ======================================================================
+
 clear_screen() {
     clear
 }
@@ -98,7 +100,6 @@ press_any_key() {
     read -n 1 -s -r
 }
 
-# Banner Display
 banner() {
     clear_screen
     echo -e "${C_BCYAN}"
@@ -112,11 +113,56 @@ banner() {
     echo -e "      ░      ░        ░ ░ ░ ▒  ░ ░ ░ ▒    ░ ░     ░ ░    ░      "
     echo -e "             ░ ▄       ░   ░░    ░   ░░     ░  ░    ░  ░        "
     echo -e "             ░                                                  "
-    echo -e "             ${C_RESET}${C_DIM}v1.0.0 | Engine: Antigravity AI | OS: Linux System Audit${C_RESET}\n"
+    echo -e "             ${C_RESET}${C_DIM}v1.1.0 | Engine: Antigravity AI | OS: Linux System Audit${C_RESET}\n"
     log_message "INFO" "Security Toolkit started."
 }
 
-# --- SYSTEM UTILITIES ---
+
+# ======================================================================
+# MODULE: SYSTEM INFO AUDITOR
+# ======================================================================
+
+display_system_info() {
+    print_status "step" "Auditing Host System General Information..."
+    
+    local os_pretty="Unknown Linux"
+    if [[ -f "/etc/os-release" ]]; then
+        os_pretty=$(grep PRETTY_NAME /etc/os-release | cut -d'=' -f2 | tr -d '"')
+    fi
+    
+    local load_avg
+    load_avg=$(cat /proc/loadavg 2>/dev/null | awk '{print $1", "$2", "$3}')
+    
+    local uptime_str
+    uptime_str=$(uptime -p 2>/dev/null)
+    
+    local total_mem free_mem
+    total_mem=$(free -h 2>/dev/null | awk '/^Mem:/ {print $2}')
+    free_mem=$(free -h 2>/dev/null | awk '/^Mem:/ {print $4}')
+    
+    local disk_usage
+    disk_usage=$(df -h / 2>/dev/null | tail -n 1 | awk '{print $5" of "$2}')
+
+    echo -e "${C_BWHITE}--- System Specifications ---${C_RESET}"
+    printf "   ${C_BOLD}%-20s:${C_RESET} %s\n" "Operating System" "$os_pretty"
+    printf "   ${C_BOLD}%-20s:${C_RESET} %s\n" "Hostname" "$(hostname)"
+    printf "   ${C_BOLD}%-20s:${C_RESET} %s\n" "Kernel Version" "$(uname -r)"
+    printf "   ${C_BOLD}%-20s:${C_RESET} %s\n" "System Uptime" "${uptime_str:-[N/A]}"
+    printf "   ${C_BOLD}%-20s:${C_RESET} %s\n" "Load Average" "${load_avg:-[N/A]}"
+    printf "   ${C_BOLD}%-20s:${C_RESET} %s (Free: %s)\n" "RAM Resources" "${total_mem:-[N/A]}" "${free_mem:-[N/A]}"
+    printf "   ${C_BOLD}%-20s:${C_RESET} %s used\n" "Disk Space (Root)" "${disk_usage:-[N/A]}"
+    echo -e "${C_GRAY}----------------------------------------------------------------------${C_RESET}"
+}
+
+
+# ======================================================================
+# MODULE: PROCESS SECURITY & CPU INVESTIGATOR
+# ======================================================================
+
+CPU_THRESHOLD=40 # Flag processes using > 40% CPU
+SUSPICIOUS_PATHS=("/tmp" "/var/tmp" "/dev/shm" "/run/user" "/home" "/var/spool/cron")
+COMMON_MASQUERADE=("mysql" "nginx" "apache2" "httpd" "syslogd" "systemd" "kworker" "sshd" "crond" "init")
+
 get_process_cpu() {
     local pid="$1"
     ps -p "$pid" -o %cpu= 2>/dev/null | tr -d ' '
@@ -134,7 +180,6 @@ get_process_cgroup() {
         local cgroup_content
         cgroup_content=$(cat "/proc/$pid/cgroup" 2>/dev/null)
         if echo "$cgroup_content" | grep -qE 'docker|kubepods|containerd|libpod|lxc'; then
-            # Extract container ID if possible
             local cid
             cid=$(echo "$cgroup_content" | grep -o -E '[a-f0-9]{64}' | head -n 1 | cut -c1-12)
             if [[ -n "$cid" ]]; then
@@ -154,7 +199,6 @@ get_process_cgroup() {
 is_elf_binary() {
     local file_path="$1"
     if [[ -f "$file_path" && -r "$file_path" ]]; then
-        # Read the first 4 bytes as hex
         local hex_magic
         hex_magic=$(od -t x1 -N 4 "$file_path" 2>/dev/null | head -n 1 | cut -d' ' -f2-5 | tr -d ' ')
         if [[ "$hex_magic" == "7f454c46" ]]; then
@@ -164,21 +208,16 @@ is_elf_binary() {
     return 1
 }
 
-# --- SCANNING MODULES ---
-
-# MODULE 1: PROCESS AUDITOR
+# Scan and print suspicious or high resource CPU processes
 check_cpu_processes() {
     print_status "step" "Analyzing High CPU Usage & Masqueraded Processes..."
     log_message "INFO" "Running process scan."
     
-    # Header
     printf "${C_BOLD}%-8s %-12s %-6s %-6s %-15s %-12s %-25s${C_RESET}\n" "PID" "USER" "CPU%" "MEM%" "CGROUP" "NAME" "REAL PATH/DETAILS"
     echo -e "${C_GRAY}----------------------------------------------------------------------------------------------------${C_RESET}"
 
     local suspects_found=0
     
-    # 1. High CPU check
-    # Read top CPU consuming processes using ps
     while read -r pid user cpu mem comm; do
         [[ -z "$pid" || "$pid" == "PID" ]] && continue
         
@@ -186,23 +225,19 @@ check_cpu_processes() {
         local reason=""
         local exe_path=""
         
-        # Check executable target
         if [[ -L "/proc/$pid/exe" ]]; then
             exe_path=$(readlink "/proc/$pid/exe" 2>/dev/null)
         fi
         
-        # Check for Deleted execution (common malware tactic: download, execute, delete binary)
         if [[ "$exe_path" == *" (deleted)"* ]]; then
             is_suspicious=1
             reason="Deleted Binary Exec"
         fi
         
-        # Check for Masquerading (running under standard name but in a globally-writable/wrong location)
         local base_exe=""
         if [[ -n "$exe_path" ]]; then
             base_exe=$(basename "${exe_path// (deleted)/}")
             
-            # Check suspicious path
             for path in "${SUSPICIOUS_PATHS[@]}"; do
                 if [[ "$exe_path" == "$path"* ]]; then
                     is_suspicious=1
@@ -211,11 +246,8 @@ check_cpu_processes() {
                 fi
             done
             
-            # Check name mismatches
-            # If the process name matches common services but execution path is weird
             for fake in "${COMMON_MASQUERADE[@]}"; do
                 if [[ "$comm" == "$fake" ]]; then
-                    # Check if actual path is typical
                     if [[ "$exe_path" != "/usr/bin/"* && "$exe_path" != "/usr/sbin/"* && "$exe_path" != "/lib/"* && "$exe_path" != "/usr/lib/"* && "$exe_path" != "/usr/lib64/"* && "$exe_path" != "/usr/libexec/"* && "$exe_path" != "/run/current-system/"* ]]; then
                         is_suspicious=1
                         reason="Fake $fake process"
@@ -224,14 +256,10 @@ check_cpu_processes() {
             done
         fi
         
-        # Check CPU exceeding threshold
-        # Using awk for decimal comparison
         local high_cpu
         high_cpu=$(awk -v cpu="$cpu" -v limit="$CPU_THRESHOLD" 'BEGIN {print (cpu > limit) ? 1 : 0}')
         if [[ "$high_cpu" -eq 1 ]]; then
-            # If CPU is high, check if it's already tagged suspicious. If not, evaluate.
             if [[ "$is_suspicious" -eq 0 ]]; then
-                # Flag high CPU from non-standard users
                 if [[ "$user" != "root" && "$user" != "systemd-"* ]]; then
                     is_suspicious=1
                     reason="High CPU (${cpu}%)"
@@ -248,7 +276,6 @@ check_cpu_processes() {
             printf "${C_BRED}%-8s %-12s %-6s %-6s %-15s %-12s %-25s${C_RESET}\n" \
                 "$pid" "${user:0:11}" "$cpu" "$mem" "${cgroup_label:0:14}" "${comm:0:11}" "${reason} -> ${exe_path:0:40}"
         else
-            # Print high resource consumer in plain style
             if [[ "$high_cpu" -eq 1 ]]; then
                 printf "${C_BYELLOW}%-8s %-12s %-6s %-6s %-15s %-12s %-25s${C_RESET}\n" \
                     "$pid" "${user:0:11}" "$cpu" "$mem" "${cgroup_label:0:14}" "${comm:0:11}" "High Resource Consumer"
@@ -266,339 +293,13 @@ check_cpu_processes() {
     fi
 }
 
-# MODULE 2: NETWORK THREAT INSPECTOR
-check_network_connections() {
-    print_status "step" "Auditing Network Connections & Outbound Stratum Pools..."
-    log_message "INFO" "Running network scan."
-
-    local network_threats=0
-    local net_tool=""
-    
-    if command -v ss &>/dev/null; then
-        net_tool="ss"
-    elif command -v netstat &>/dev/null; then
-        net_tool="netstat"
-    fi
-
-    if [[ -z "$net_tool" ]]; then
-        print_status "warn" "Neither 'ss' nor 'netstat' is installed. Reading direct socket connections is limited."
-        print_status "info" "Falling back to scanning /proc/net/tcp..."
-        # Simplified parsing of raw TCP connections
-        if [[ -f "/proc/net/tcp" ]]; then
-            echo -e "${C_BOLD}%-20s %-20s %-10s${C_RESET}" "Local Hex IP:Port" "Remote Hex IP:Port" "Status"
-            tail -n +2 /proc/net/tcp | head -n 10
-        fi
-        return
-    fi
-
-    # Print Header
-    printf "${C_BOLD}%-6s %-12s %-20s %-25s %-12s %-15s${C_RESET}\n" "PROTO" "PID" "PROCESS" "LOCAL ADDRESS" "REMOTE PORT" "STATE"
-    echo -e "${C_GRAY}----------------------------------------------------------------------------------------------------${C_RESET}"
-
-    # Compile a regex of stratum mining ports for easy matching
-    local port_regex
-    port_regex=$(echo "${MINING_PORTS[@]}" | tr ' ' '|')
-
-    if [[ "$net_tool" == "ss" ]]; then
-        # ss output
-        while read -r proto state local_addr remote_addr process; do
-            [[ "$proto" == "Netid" || -z "$remote_addr" ]] && continue
-            
-            # Extract port
-            local rport
-            rport=$(echo "$remote_addr" | awk -F':' '{print $NF}')
-            
-            # Extract PID and Process Name from ss output format, e.g. users:(("mysql",pid=3340294,fd=12))
-            local pid="-"
-            local pname="-"
-            if [[ "$process" == *"pid="* ]]; then
-                pid=$(echo "$process" | grep -o -E 'pid=[0-9]+' | cut -d'=' -f2)
-                pname=$(echo "$process" | grep -o -E '"[^"]+"' | head -n 1 | tr -d '"')
-            fi
-
-            # Check if destination port is a known stratum mining port
-            if echo "$rport" | grep -q -E "^(${port_regex})$"; then
-                network_threats=$((network_threats + 1))
-                log_message "WARNING" "Stratum miner connection detected: PID $pid ($pname) on port $rport"
-                printf "${C_BRED}%-6s %-12s %-20s %-25s %-12s %-15s${C_RESET}\n" \
-                    "$proto" "$pid" "${pname:0:19}" "${local_addr:0:24}" "$rport" "$state"
-            else
-                # Outgoing established connections to external IPs (ignoring loopback)
-                if [[ "$state" == "ESTAB" && "$remote_addr" != "127.0.0.1"* && "$remote_addr" != "::1"* && "$remote_addr" != "localhost"* ]]; then
-                    # Check if process is running out of a temporary directory
-                    if [[ "$pid" != "-" ]]; then
-                        local exe_path
-                        exe_path=$(readlink "/proc/$pid/exe" 2>/dev/null)
-                        for path in "${SUSPICIOUS_PATHS[@]}"; do
-                            if [[ "$exe_path" == "$path"* ]]; then
-                                network_threats=$((network_threats + 1))
-                                log_message "WARNING" "Suspicious process outbound connection: PID $pid ($pname) -> $remote_addr"
-                                printf "${C_BYELLOW}%-6s %-12s %-20s %-25s %-12s %-15s${C_RESET}\n" \
-                                    "$proto" "$pid" "${pname:0:19}*" "${local_addr:0:24}" "$rport" "$state"
-                                break
-                            fi
-                        done
-                    fi
-                fi
-            fi
-        done < <(ss -tupn state established 2>/dev/null)
-    else
-        # netstat output
-        while read -r proto recv_q send_q local_addr remote_addr state process; do
-            [[ "$proto" != "tcp" && "$proto" != "udp" ]] && continue
-            
-            local rport
-            rport=$(echo "$remote_addr" | awk -F':' '{print $NF}')
-            
-            local pid="-"
-            local pname="-"
-            if [[ "$process" == *"/"* ]]; then
-                pid=$(echo "$process" | cut -d'/' -f1)
-                pname=$(echo "$process" | cut -d'/' -f2-)
-            fi
-
-            if echo "$rport" | grep -q -E "^(${port_regex})$"; then
-                network_threats=$((network_threats + 1))
-                log_message "WARNING" "Stratum miner connection detected (netstat): PID $pid ($pname) on port $rport"
-                printf "${C_BRED}%-6s %-12s %-20s %-25s %-12s %-15s${C_RESET}\n" \
-                    "$proto" "$pid" "${pname:0:19}" "${local_addr:0:24}" "$rport" "$state"
-            fi
-        done < <(netstat -nap 2>/dev/null)
-    fi
-
-    echo -e "${C_GRAY}----------------------------------------------------------------------------------------------------${C_RESET}"
-    if [[ "$network_threats" -gt 0 ]]; then
-        print_status "danger" "Found $network_threats network connections linking suspicious paths or stratum ports."
-    else
-        print_status "success" "No stratum pool connections or suspicious path network sockets identified."
-    fi
-}
-
-# MODULE 3: GLOBALLY-WRITABLE PATH SCANNER
-check_globally_writeable() {
-    print_status "step" "Scanning Globals/Temp Storage (/tmp, /dev/shm) for Binaries & Miner Configs..."
-    log_message "INFO" "Scanning temporary folders."
-
-    local threat_files=0
-    
-    # We will search the designated temp paths
-    # Criteria:
-    # 1. ELF binaries
-    # 2. Hidden scripts
-    # 3. Known miner config names (config.json, pool.txt, etc.)
-    
-    printf "${C_BOLD}%-25s %-12s %-15s %-10s %-15s${C_RESET}\n" "PATH" "PERMISSIONS" "OWNER" "SIZE" "TYPE"
-    echo -e "${C_GRAY}----------------------------------------------------------------------------------------------------${C_RESET}"
-
-    for target_dir in "/tmp" "/var/tmp" "/dev/shm" "/run/user"; do
-        if [[ ! -d "$target_dir" ]]; then
-            continue
-        fi
-
-        # Find all files in the directory (maxdepth 3 to prevent infinite loops in docker mounts/sockets)
-        while read -r file_path; do
-            [[ -z "$file_path" || ! -f "$file_path" ]] && continue
-
-            local matches_sig=0
-            local threat_type=""
-
-            # Check if it's an ELF binary
-            if is_elf_binary "$file_path"; then
-                matches_sig=1
-                threat_type="ELF Executable"
-            fi
-
-            # Check file name signatures
-            local base_name
-            base_name=$(basename "$file_path")
-            if [[ "$base_name" == *"xmrig"* || "$base_name" == "config.json" && "$target_dir" == "/tmp" || "$base_name" == "pool.txt" || "$base_name" == ".miner"* ]]; then
-                matches_sig=1
-                threat_type="Miner Signature/Config"
-            fi
-
-            # Check for hidden bash/shell scripts in temp
-            if [[ "$base_name" == .* && ( "$base_name" == *".sh" || "$base_name" == *".py" || "$base_name" == *".pl" ) ]]; then
-                matches_sig=1
-                threat_type="Hidden Script"
-            fi
-
-            if [[ "$matches_sig" -eq 1 ]]; then
-                threat_files=$((threat_files + 1))
-                log_message "WARNING" "Malicious file signature found: $file_path ($threat_type)"
-                
-                local perms owner size
-                perms=$(stat -c "%a" "$file_path" 2>/dev/null)
-                owner=$(stat -c "%U:%G" "$file_path" 2>/dev/null)
-                size=$(stat -c "%s" "$file_path" 2>/dev/null | awk '{ split("B KB MB GB", v); s=1; while($1>1024){$1/=1024; s++} printf "%.1f %s", $1, v[s] }')
-                
-                printf "${C_BRED}%-25s %-12s %-15s %-10s %-15s${C_RESET}\n" \
-                    "${file_path:0:24}" "$perms" "$owner" "$size" "$threat_type"
-            fi
-        done < <(find "$target_dir" -maxdepth 3 -type f 2>/dev/null)
-    done
-
-    echo -e "${C_GRAY}----------------------------------------------------------------------------------------------------${C_RESET}"
-    if [[ "$threat_files" -gt 0 ]]; then
-        print_status "danger" "Found $threat_files suspicious files in writable systems storage."
-        print_status "bullet" "Consider quarantining these files using 'chmod 000 <file>' or moving them to a quarantine directory."
-    else
-        print_status "success" "Globally-writable directories look clean."
-    fi
-}
-
-# MODULE 4: PERSISTENCE AUDITOR
-check_persistence() {
-    print_status "step" "Auditing System Persistence (Cron, Systemd Services, Startup)..."
-    log_message "INFO" "Auditing persistence."
-
-    local persistence_issues=0
-
-    # 1. Inspect Systemd services (looking for services launching binaries out of suspicious paths)
-    print_status "info" "Scanning Systemd custom units..."
-    local systemd_root="/etc/systemd/system"
-    if [[ -d "$systemd_root" ]]; then
-        while read -r service_file; do
-            [[ -z "$service_file" || ! -f "$service_file" ]] && continue
-            
-            # Read ExecStart command
-            local exec_start
-            exec_start=$(grep -E '^\s*ExecStart\s*=' "$service_file" 2>/dev/null)
-            if [[ -n "$exec_start" ]]; then
-                # Clean prefix "ExecStart=" and possible leading hyphens or modifiers to get the binary path
-                local cmd_binary
-                cmd_binary=$(echo "$exec_start" | sed -E 's/^\s*ExecStart\s*=\s*-?//' | awk '{print $1}' | tr -d '"'\')
-                
-                for path in "${SUSPICIOUS_PATHS[@]}"; do
-                    if [[ "$cmd_binary" == "$path"* ]]; then
-                        persistence_issues=$((persistence_issues + 1))
-                        log_message "WARNING" "Suspicious Systemd service: $service_file -> Runs out of $path"
-                        print_status "warn" "Systemd Unit: $(basename "$service_file")"
-                        print_status "bullet" "Command: $exec_start"
-                        break
-                    fi
-                done
-            fi
-        done < <(find "$systemd_root" -maxdepth 2 -name "*.service" 2>/dev/null)
-    fi
-
-    # 2. Inspect Cron jobs (looking for curl, wget download and execute loops, or scripts in temp paths)
-    print_status "info" "Scanning Crontabs & Cron folders..."
-    
-    # System crontab
-    if [[ -f "/etc/crontab" ]]; then
-        if grep -qE "curl|wget|chmod|/tmp|/dev/shm" "/etc/crontab" 2>/dev/null; then
-            persistence_issues=$((persistence_issues + 1))
-            print_status "warn" "Potential downloader/miner script pattern matched in /etc/crontab!"
-            grep -E "curl|wget|chmod|/tmp|/dev/shm" "/etc/crontab" 2>/dev/null | while read -r line; do
-                print_status "bullet" "Match: $line"
-            done
-        fi
-    fi
-
-    # User crontabs
-    local cron_dir="/var/spool/cron/crontabs"
-    if [[ -d "$cron_dir" ]]; then
-        while read -r cron_user_file; do
-            [[ -z "$cron_user_file" || ! -f "$cron_user_file" ]] && continue
-            local u
-            u=$(basename "$cron_user_file")
-            
-            if grep -qE "curl|wget|chmod|/tmp|/dev/shm" "$cron_user_file" 2>/dev/null; then
-                persistence_issues=$((persistence_issues + 1))
-                log_message "WARNING" "Suspicious cron found for user $u"
-                print_status "warn" "Suspicious Cron Job found for user: $u"
-                grep -E "curl|wget|chmod|/tmp|/dev/shm" "$cron_user_file" 2>/dev/null | while read -r line; do
-                    print_status "bullet" "Line: $line"
-                done
-            fi
-        done < <(find "$cron_dir" -type f 2>/dev/null)
-    fi
-
-    # Shell startup check
-    print_status "info" "Scanning shell profiles & rc.local..."
-    if [[ -f "/etc/rc.local" ]]; then
-        if grep -qE "curl|wget|/tmp|/dev/shm" "/etc/rc.local" 2>/dev/null; then
-            persistence_issues=$((persistence_issues + 1))
-            print_status "warn" "/etc/rc.local contains execution from suspicious paths or network fetch commands!"
-        fi
-    fi
-
-    if [[ "$persistence_issues" -eq 0 ]]; then
-        print_status "success" "Persistence vectors (Cron, Systemd, Startup) appear clean."
-    else
-        print_status "danger" "Found $persistence_issues persistence vulnerabilities or malicious entries."
-    fi
-}
-
-# MODULE 5: ROOTKIT & SYSTEM INTEGRITY CHECKER
-check_system_integrity() {
-    print_status "step" "Checking System Integrity & Library Injection Rootkits..."
-    log_message "INFO" "Checking system integrity."
-
-    # 1. Check ld.so.preload (LD_PRELOAD userland rootkit vector)
-    local preload_file="/etc/ld.so.preload"
-    if [[ -f "$preload_file" ]]; then
-        # Check if it has active entries
-        local active_entries
-        active_entries=$(grep -v -E "^\s*(#|$)" "$preload_file" 2>/dev/null)
-        if [[ -n "$active_entries" ]]; then
-            log_message "ALERT" "ld.so.preload contains active library injections!"
-            print_status "danger" "Rootkit Danger: '/etc/ld.so.preload' contains active library injections!"
-            echo -e "${C_BRED}$active_entries${C_RESET}"
-            print_status "bullet" "Malware preloads library injectors to hide processes and network ports!"
-        else
-            print_status "success" "'/etc/ld.so.preload' exists but has no active preloaded libraries."
-        fi
-    else
-        print_status "success" "'/etc/ld.so.preload' does not exist (Standard healthy configuration)."
-    fi
-
-    # 2. Check essential binaries for hijacking
-    print_status "info" "Verifying core commands for suspicious aliasing/wrappers..."
-    local hijacked_tools=0
-    for cmd in "ps" "top" "ss" "netstat" "lsof"; do
-        local cmd_path
-        cmd_path=$(which "$cmd" 2>/dev/null)
-        if [[ -n "$cmd_path" ]]; then
-            # Verify if it's a shell script instead of a binary
-            if file "$cmd_path" 2>/dev/null | grep -q "script"; then
-                hijacked_tools=$((hijacked_tools + 1))
-                log_message "ALERT" "Core command hijacked: $cmd_path is a text script!"
-                print_status "danger" "Core tool '$cmd_path' has been replaced by a script wrapper! High chance of rootkit."
-            fi
-        fi
-    done
-
-    if [[ "$hijacked_tools" -eq 0 ]]; then
-        print_status "success" "System tools (ps, top, ss, lsof) appear to be clean binary executables."
-    fi
-}
-
-# --- UNIFIED FULL SCAN RUNNER ---
-run_full_scan() {
-    clear_screen
-    print_header
-    echo -e "${C_BWHITE}Running unified system security assessment. Please wait...${C_RESET}\n"
-    
-    check_cpu_processes
-    check_network_connections
-    check_globally_writeable
-    check_persistence
-    check_system_integrity
-    
-    echo -e "\n${C_BCYAN}======================================================================${C_RESET}"
-    print_status "success" "Security assessment complete. Audit log written to: $LOG_FILE"
-    press_any_key
-}
-
-# --- PROCESS INVESTIGATOR & REMEDIATION (SAFE MODE CONSOLE) ---
+# Safe Mode interactive Investigator
 process_investigator() {
     while true; do
         clear_screen
         print_header
         echo -e "${C_BYELLOW}               >>> SUSPICIOUS PROCESS DEEP DIVE <<<${C_RESET}\n"
         
-        # Quick summary of top CPU suspects
         print_status "info" "Here are current running processes matching high-CPU or non-standard paths:"
         printf "   ${C_BOLD}%-8s %-12s %-6s %-12s %-30s${C_RESET}\n" "PID" "USER" "CPU%" "COMM" "REAL BINARY PATH"
         echo -e "   ${C_GRAY}----------------------------------------------------------------------------------${C_RESET}"
@@ -611,7 +312,6 @@ process_investigator() {
                 exe_path=$(readlink "/proc/$pid/exe" 2>/dev/null)
             fi
             
-            # Flag if suspicious
             local is_sus=0
             if [[ "$exe_path" == *" (deleted)"* ]]; then is_sus=1; fi
             for path in "${SUSPICIOUS_PATHS[@]}"; do
@@ -642,14 +342,12 @@ process_investigator() {
             break
         fi
         
-        # Verify if PID exists
         if [[ ! -d "/proc/$target_pid" ]]; then
             print_status "danger" "PID $target_pid does not exist. Please enter a valid running process ID."
             sleep 2
             continue
         fi
 
-        # Deep investigation loop for chosen PID
         while true; do
             clear_screen
             print_header
@@ -667,7 +365,6 @@ process_investigator() {
             [[ -f "/proc/$target_pid/status" ]] && parent_pid=$(grep PPid "/proc/$target_pid/status" | awk '{print $2}')
             [[ -L "/proc/$target_pid/cwd" ]] && cwd=$(readlink "/proc/$target_pid/cwd")
 
-            # Print Process Dossier
             echo -e "${C_BWHITE}--- Process Dossier ---${C_RESET}"
             printf "${C_BOLD}%-20s:${C_RESET} %s\n" "Command Name" "$comm"
             printf "${C_BOLD}%-20s:${C_RESET} %s\n" "Owner/User" "$user"
@@ -686,7 +383,6 @@ process_investigator() {
             printf "${C_BOLD}%-20s:${C_RESET} %s\n" "Launch Commandline" "${cmdline:-[Empty or hidden]}"
             
             echo -e "\n${C_BWHITE}--- Open File Descriptors (Sockets, Log Files, Ports) ---${C_RESET}"
-            # Direct listing of descriptors inside proc
             if [[ -d "/proc/$target_pid/fd" ]]; then
                 local count=0
                 ls -l "/proc/$target_pid/fd" 2>/dev/null | tail -n +2 | while read -r line; do
@@ -694,7 +390,6 @@ process_investigator() {
                     link=$(echo "$line" | awk -F'-> ' '{print $2}')
                     if [[ -n "$link" ]]; then
                         count=$((count + 1))
-                        # Limit output to 12 files to prevent console spam
                         if [[ "$count" -le 12 ]]; then
                             echo -e "   ${C_CYAN}*${C_RESET} File: $link"
                         fi
@@ -709,7 +404,6 @@ process_investigator() {
                 echo -e "   ${C_GRAY}Failed to access descriptors (Permission or gone).${C_RESET}"
             fi
 
-            # Check outbound sockets matching Stratum
             if command -v ss &>/dev/null; then
                 local conns
                 conns=$(ss -tupn state established 2>/dev/null | grep "pid=$target_pid")
@@ -719,10 +413,8 @@ process_investigator() {
                 fi
             fi
 
-            # Environment Variables Check
             echo -e "\n${C_BWHITE}--- Key Environment Variables ---${C_RESET}"
             if [[ -f "/proc/$target_pid/environ" ]]; then
-                # Read environment variables, replacing null bytes with newlines, showing non-sensitive entries
                 local envs
                 envs=$(cat "/proc/$target_pid/environ" 2>/dev/null | tr '\0' '\n' | grep -E -v 'PASS|TOKEN|KEY|SECRET|AUTH|SIGN' | head -n 8)
                 if [[ -n "$envs" ]]; then
@@ -732,7 +424,6 @@ process_investigator() {
                 fi
             fi
 
-            # Remediation Options Banner
             echo -e "\n${C_BCYAN}======================================================================${C_RESET}"
             echo -e "${C_BOLD}Remediation Actions:${C_RESET}"
             echo -e "  [S] ${C_BYELLOW}Freeze/Suspend (STOP)${C_RESET}   - Safely pauses process (releases 100% CPU)"
@@ -773,7 +464,7 @@ process_investigator() {
                         if kill -9 "$target_pid" 2>/dev/null; then
                             print_status "success" "Process PID $target_pid successfully TERMINATED."
                             sleep 2
-                            break # Break back to PID entry
+                            break
                         else
                             print_status "danger" "Failed to terminate process."
                             sleep 2
@@ -781,7 +472,6 @@ process_investigator() {
                     fi
                     ;;
                 "I")
-                    # Isolate binary file (revoke execute permissions and rename)
                     local clean_exe="${exe_path// (deleted)/}"
                     if [[ -f "$clean_exe" ]]; then
                         print_status "warn" "About to isolate executable: $clean_exe"
@@ -812,7 +502,593 @@ process_investigator() {
     done
 }
 
-# --- SYSTEM INTEGRITY / DEPLOYMENT HELPERS ---
+
+# ======================================================================
+# MODULE: NETWORK SOCKET AUDITOR
+# ======================================================================
+
+MINING_PORTS=(3333 4444 5555 7777 8888 9999 14444 8008 8080)
+
+check_network_connections() {
+    print_status "step" "Auditing Network Connections & Outbound Stratum Pools..."
+    log_message "INFO" "Running network scan."
+
+    local network_threats=0
+    local net_tool=""
+    
+    if command -v ss &>/dev/null; then
+        net_tool="ss"
+    elif command -v netstat &>/dev/null; then
+        net_tool="netstat"
+    fi
+
+    if [[ -z "$net_tool" ]]; then
+        print_status "warn" "Neither 'ss' nor 'netstat' is installed. Reading direct socket connections is limited."
+        print_status "info" "Falling back to scanning /proc/net/tcp..."
+        if [[ -f "/proc/net/tcp" ]]; then
+            echo -e "${C_BOLD}%-20s %-20s %-10s${C_RESET}" "Local Hex IP:Port" "Remote Hex IP:Port" "Status"
+            tail -n +2 /proc/net/tcp | head -n 10
+        fi
+        return
+    fi
+
+    printf "${C_BOLD}%-6s %-12s %-20s %-25s %-12s %-15s${C_RESET}\n" "PROTO" "PID" "PROCESS" "LOCAL ADDRESS" "REMOTE PORT" "STATE"
+    echo -e "${C_GRAY}----------------------------------------------------------------------------------------------------${C_RESET}"
+
+    local port_regex
+    port_regex=$(echo "${MINING_PORTS[@]}" | tr ' ' '|')
+
+    if [[ "$net_tool" == "ss" ]]; then
+        while read -r proto state local_addr remote_addr process; do
+            [[ "$proto" == "Netid" || -z "$remote_addr" ]] && continue
+            
+            local rport
+            rport=$(echo "$remote_addr" | awk -F':' '{print $NF}')
+            
+            local pid="-"
+            local pname="-"
+            if [[ "$process" == *"pid="* ]]; then
+                pid=$(echo "$process" | grep -o -E 'pid=[0-9]+' | cut -d'=' -f2)
+                pname=$(echo "$process" | grep -o -E '"[^"]+"' | head -n 1 | tr -d '"')
+            fi
+
+            if echo "$rport" | grep -q -E "^(${port_regex})$"; then
+                network_threats=$((network_threats + 1))
+                log_message "WARNING" "Stratum miner connection detected: PID $pid ($pname) on port $rport"
+                printf "${C_BRED}%-6s %-12s %-20s %-25s %-12s %-15s${C_RESET}\n" \
+                    "$proto" "$pid" "${pname:0:19}" "${local_addr:0:24}" "$rport" "$state"
+            else
+                if [[ "$state" == "ESTAB" && "$remote_addr" != "127.0.0.1"* && "$remote_addr" != "::1"* && "$remote_addr" != "localhost"* ]]; then
+                    if [[ "$pid" != "-" ]]; then
+                        local exe_path
+                        exe_path=$(readlink "/proc/$pid/exe" 2>/dev/null)
+                        for path in "${SUSPICIOUS_PATHS[@]}"; do
+                            if [[ "$exe_path" == "$path"* ]]; then
+                                network_threats=$((network_threats + 1))
+                                log_message "WARNING" "Suspicious process outbound connection: PID $pid ($pname) -> $remote_addr"
+                                printf "${C_BYELLOW}%-6s %-12s %-20s %-25s %-12s %-15s${C_RESET}\n" \
+                                    "$proto" "$pid" "${pname:0:19}*" "${local_addr:0:24}" "$rport" "$state"
+                                break
+                            fi
+                        done
+                    fi
+                fi
+            fi
+        done < <(ss -tupn state established 2>/dev/null)
+    else
+        while read -r proto recv_q send_q local_addr remote_addr state process; do
+            [[ "$proto" != "tcp" && "$proto" != "udp" ]] && continue
+            
+            local rport
+            rport=$(echo "$remote_addr" | awk -F':' '{print $NF}')
+            
+            local pid="-"
+            local pname="-"
+            if [[ "$process" == *"/"* ]]; then
+                pid=$(echo "$process" | cut -d'/' -f1)
+                pname=$(echo "$process" | cut -d'/' -f2-)
+            fi
+
+            if echo "$rport" | grep -q -E "^(${port_regex})$"; then
+                network_threats=$((network_threats + 1))
+                log_message "WARNING" "Stratum miner connection detected (netstat): PID $pid ($pname) on port $rport"
+                printf "${C_BRED}%-6s %-12s %-20s %-25s %-12s %-15s${C_RESET}\n" \
+                    "$proto" "$pid" "${pname:0:19}" "${local_addr:0:24}" "$rport" "$state"
+            fi
+        done < <(netstat -nap 2>/dev/null)
+    fi
+
+    echo -e "${C_GRAY}----------------------------------------------------------------------------------------------------${C_RESET}"
+    if [[ "$network_threats" -gt 0 ]]; then
+        print_status "danger" "Found $network_threats network connections linking suspicious paths or stratum ports."
+    else
+        print_status "success" "No stratum pool connections or suspicious path network sockets identified."
+    fi
+}
+
+
+# ======================================================================
+# MODULE: WRITEABLE STORAGE SCANNER
+# ======================================================================
+
+check_globally_writeable() {
+    print_status "step" "Scanning Globals/Temp Storage (/tmp, /dev/shm) for Binaries & Miner Configs..."
+    log_message "INFO" "Scanning temporary folders."
+
+    local threat_files=0
+    
+    printf "${C_BOLD}%-25s %-12s %-15s %-10s %-15s${C_RESET}\n" "PATH" "PERMISSIONS" "OWNER" "SIZE" "TYPE"
+    echo -e "${C_GRAY}----------------------------------------------------------------------------------------------------${C_RESET}"
+
+    for target_dir in "/tmp" "/var/tmp" "/dev/shm" "/run/user"; do
+        if [[ ! -d "$target_dir" ]]; then
+            continue
+        fi
+
+        while read -r file_path; do
+            [[ -z "$file_path" || ! -f "$file_path" ]] && continue
+
+            local matches_sig=0
+            local threat_type=""
+
+            if is_elf_binary "$file_path"; then
+                matches_sig=1
+                threat_type="ELF Executable"
+            fi
+
+            local base_name
+            base_name=$(basename "$file_path")
+            if [[ "$base_name" == *"xmrig"* || "$base_name" == "config.json" && "$target_dir" == "/tmp" || "$base_name" == "pool.txt" || "$base_name" == ".miner"* ]]; then
+                matches_sig=1
+                threat_type="Miner Signature/Config"
+            fi
+
+            if [[ "$base_name" == .* && ( "$base_name" == *".sh" || "$base_name" == *".py" || "$base_name" == *".pl" ) ]]; then
+                matches_sig=1
+                threat_type="Hidden Script"
+            fi
+
+            if [[ "$matches_sig" -eq 1 ]]; then
+                threat_files=$((threat_files + 1))
+                log_message "WARNING" "Malicious file signature found: $file_path ($threat_type)"
+                
+                local perms owner size
+                perms=$(stat -c "%a" "$file_path" 2>/dev/null)
+                owner=$(stat -c "%U:%G" "$file_path" 2>/dev/null)
+                size=$(stat -c "%s" "$file_path" 2>/dev/null | awk '{ split("B KB MB GB", v); s=1; while($1>1024){$1/=1024; s++} printf "%.1f %s", $1, v[s] }')
+                
+                printf "${C_BRED}%-25s %-12s %-15s %-10s %-15s${C_RESET}\n" \
+                    "${file_path:0:24}" "$perms" "$owner" "$size" "$threat_type"
+            fi
+        done < <(find "$target_dir" -maxdepth 3 -type f 2>/dev/null)
+    done
+
+    echo -e "${C_GRAY}----------------------------------------------------------------------------------------------------${C_RESET}"
+    if [[ "$threat_files" -gt 0 ]]; then
+        print_status "danger" "Found $threat_files suspicious files in writable systems storage."
+        print_status "bullet" "Consider quarantining these files using 'chmod 000 <file>' or moving them to a quarantine directory."
+    else
+        print_status "success" "Globally-writable directories look clean."
+    fi
+}
+
+
+# ======================================================================
+# MODULE: ROOTKIT & SYSTEM INTEGRITY CHECKER
+# ======================================================================
+
+check_system_integrity() {
+    print_status "step" "Checking System Integrity & Library Injection Rootkits..."
+    log_message "INFO" "Checking system integrity."
+
+    # 1. Check ld.so.preload
+    local preload_file="/etc/ld.so.preload"
+    if [[ -f "$preload_file" ]]; then
+        local active_entries
+        active_entries=$(grep -v -E "^\s*(#|$)" "$preload_file" 2>/dev/null)
+        if [[ -n "$active_entries" ]]; then
+            log_message "ALERT" "ld.so.preload contains active library injections!"
+            print_status "danger" "Rootkit Danger: '/etc/ld.so.preload' contains active library injections!"
+            echo -e "${C_BRED}$active_entries${C_RESET}"
+            print_status "bullet" "Malware preloads library injectors to hide processes and network ports!"
+        else
+            print_status "success" "'/etc/ld.so.preload' exists but has no active preloaded libraries."
+        fi
+    else
+        print_status "success" "'/etc/ld.so.preload' does not exist (Standard healthy configuration)."
+    fi
+
+    # 2. Check essential binaries for hijacking
+    print_status "info" "Verifying core commands for suspicious aliasing/wrappers..."
+    local hijacked_tools=0
+    for cmd in "ps" "top" "ss" "netstat" "lsof"; do
+        local cmd_path
+        cmd_path=$(which "$cmd" 2>/dev/null)
+        if [[ -n "$cmd_path" ]]; then
+            if file "$cmd_path" 2>/dev/null | grep -q "script"; then
+                hijacked_tools=$((hijacked_tools + 1))
+                log_message "ALERT" "Core command hijacked: $cmd_path is a text script!"
+                print_status "danger" "Core tool '$cmd_path' has been replaced by a script wrapper! High chance of rootkit."
+            fi
+        fi
+    done
+
+    if [[ "$hijacked_tools" -eq 0 ]]; then
+        print_status "success" "System tools (ps, top, ss, lsof) appear to be clean binary executables."
+    fi
+}
+
+
+# ======================================================================
+# MODULE: PERSISTENCE MECHANISMS AUDITOR
+# ======================================================================
+
+check_persistence() {
+    print_status "step" "Auditing System Persistence (Cron, Systemd Services, Startup)..."
+    log_message "INFO" "Auditing persistence."
+
+    local persistence_issues=0
+
+    # 1. Systemd Service Audit
+    print_status "info" "Scanning Systemd custom units..."
+    local systemd_root="/etc/systemd/system"
+    if [[ -d "$systemd_root" ]]; then
+        while read -r service_file; do
+            [[ -z "$service_file" || ! -f "$service_file" ]] && continue
+            
+            local exec_start
+            exec_start=$(grep -E '^\s*ExecStart\s*=' "$service_file" 2>/dev/null)
+            if [[ -n "$exec_start" ]]; then
+                local cmd_binary
+                cmd_binary=$(echo "$exec_start" | sed -E 's/^\s*ExecStart\s*=\s*-?//' | awk '{print $1}' | tr -d '"'\')
+                
+                for path in "${SUSPICIOUS_PATHS[@]}"; do
+                    if [[ "$cmd_binary" == "$path"* ]]; then
+                        persistence_issues=$((persistence_issues + 1))
+                        log_message "WARNING" "Suspicious Systemd service: $service_file -> Runs out of $path"
+                        print_status "warn" "Systemd Unit: $(basename "$service_file")"
+                        print_status "bullet" "Command: $exec_start"
+                        break
+                    fi
+                done
+            fi
+        done < <(find "$systemd_root" -maxdepth 2 -name "*.service" 2>/dev/null)
+    fi
+
+    # 2. Cron Jobs Audit
+    print_status "info" "Scanning Crontabs & Cron folders..."
+    
+    if [[ -f "/etc/crontab" ]]; then
+        if grep -qE "curl|wget|chmod|/tmp|/dev/shm" "/etc/crontab" 2>/dev/null; then
+            persistence_issues=$((persistence_issues + 1))
+            print_status "warn" "Potential downloader/miner script pattern matched in /etc/crontab!"
+            grep -E "curl|wget|chmod|/tmp|/dev/shm" "/etc/crontab" 2>/dev/null | while read -r line; do
+                print_status "bullet" "Match: $line"
+            done
+        fi
+    fi
+
+    local cron_dir="/var/spool/cron/crontabs"
+    if [[ -d "$cron_dir" ]]; then
+        while read -r cron_user_file; do
+            [[ -z "$cron_user_file" || ! -f "$cron_user_file" ]] && continue
+            local u
+            u=$(basename "$cron_user_file")
+            
+            if grep -qE "curl|wget|chmod|/tmp|/dev/shm" "$cron_user_file" 2>/dev/null; then
+                persistence_issues=$((persistence_issues + 1))
+                log_message "WARNING" "Suspicious cron found for user $u"
+                print_status "warn" "Suspicious Cron Job found for user: $u"
+                grep -E "curl|wget|chmod|/tmp|/dev/shm" "$cron_user_file" 2>/dev/null | while read -r line; do
+                    print_status "bullet" "Line: $line"
+                done
+            fi
+        done < <(find "$cron_dir" -type f 2>/dev/null)
+    fi
+
+    # 3. Shell Profile Check
+    print_status "info" "Scanning shell profiles & rc.local..."
+    if [[ -f "/etc/rc.local" ]]; then
+        if grep -qE "curl|wget|/tmp|/dev/shm" "/etc/rc.local" 2>/dev/null; then
+            persistence_issues=$((persistence_issues + 1))
+            print_status "warn" "/etc/rc.local contains execution from suspicious paths or network fetch commands!"
+        fi
+    fi
+
+    if [[ "$persistence_issues" -eq 0 ]]; then
+        print_status "success" "Persistence vectors (Cron, Systemd, Startup) appear clean."
+    else
+        print_status "danger" "Found $persistence_issues persistence vulnerabilities or malicious entries."
+    fi
+}
+
+
+# ======================================================================
+# MODULE: USER IDENTITY & PRIVILEGE AUDITOR
+# ======================================================================
+
+audit_system_users() {
+    print_status "step" "Auditing System User Accounts & Login Privileges..."
+    log_message "INFO" "Auditing user accounts."
+
+    local backdoor_users=0
+    local login_shells=("/bin/bash" "/bin/sh" "/bin/zsh" "/usr/bin/bash" "/usr/bin/zsh" "/bin/dash")
+
+    # 1. Check for unauthorized UID 0 (Root Privileged) accounts
+    echo -e "${C_BWHITE}--- Superuser (UID 0) Account Check ---${C_RESET}"
+    while read -r line; do
+        local u uid
+        u=$(echo "$line" | cut -d':' -f1)
+        uid=$(echo "$line" | cut -d':' -f3)
+        
+        if [[ "$uid" -eq 0 ]]; then
+            if [[ "$u" != "root" ]]; then
+                backdoor_users=$((backdoor_users + 1))
+                log_message "ALERT" "Backdoor user detected with UID 0: $u"
+                print_status "danger" "PRIVILEGE ESCALATION: User '$u' has UID 0 (Full Root Access)!"
+            else
+                print_status "bullet" "Authorized root account verified: root (UID 0)"
+            fi
+        fi
+    done < /etc/passwd
+
+    if [[ "$backdoor_users" -eq 0 ]]; then
+        print_status "success" "No unauthorized UID 0 (superuser) accounts found."
+    fi
+
+    # 2. Check for interactive login accounts
+    echo -e "\n${C_BWHITE}--- Active Shell Login Accounts ---${C_RESET}"
+    printf "${C_BOLD}%-15s %-6s %-6s %-30s %-20s${C_RESET}\n" "USER" "UID" "GID" "HOME DIRECTORY" "LOGIN SHELL"
+    echo -e "${C_GRAY}----------------------------------------------------------------------------------${C_RESET}"
+    
+    local active_accounts=0
+    while read -r line; do
+        local u uid gid home shell
+        u=$(echo "$line" | cut -d':' -f1)
+        uid=$(echo "$line" | cut -d':' -f3)
+        gid=$(echo "$line" | cut -d':' -f4)
+        home=$(echo "$line" | cut -d':' -f6)
+        shell=$(echo "$line" | cut -d':' -f7)
+        
+        local is_login=0
+        for sh in "${login_shells[@]}"; do
+            if [[ "$shell" == "$sh" ]]; then
+                is_login=1
+                break
+            fi
+        done
+        
+        if [[ "$is_login" -eq 1 ]]; then
+            active_accounts=$((active_accounts + 1))
+            if [[ "$u" != "root" && "$uid" -lt 1000 ]]; then
+                printf "${C_BYELLOW}%-15s %-6s %-6s %-30s %-20s${C_RESET}\n" \
+                    "$u" "$uid" "$gid" "${home:0:29}" "$shell"
+            else
+                printf "%-15s %-6s %-6s %-30s %-20s\n" \
+                    "$u" "$uid" "$gid" "${home:0:29}" "$shell"
+            fi
+        fi
+    done < /etc/passwd
+    echo -e "${C_GRAY}----------------------------------------------------------------------------------${C_RESET}"
+    print_status "info" "Found $active_accounts accounts with active login shells."
+
+    # 3. Recent Logins Check
+    echo -e "\n${C_BWHITE}--- Recent System SSH Login Records ---${C_RESET}"
+    if command -v last &>/dev/null; then
+        last -n 8 | grep -v "wtmp" | while read -r line; do
+            [[ -z "$line" ]] && continue
+            echo -e "   ${C_CYAN}*${C_RESET} $line"
+        done
+    else
+        echo -e "   ${C_GRAY}'last' command is missing or login log (/var/log/wtmp) is unreadable.${C_RESET}"
+    fi
+}
+
+
+# ======================================================================
+# MODULE: SSH KEYS AUDITOR
+# ======================================================================
+
+audit_ssh_keys() {
+    print_status "step" "Auditing SSH Authorized Keys & Searching for Private Key Leaks..."
+    log_message "INFO" "Auditing SSH keys."
+
+    local ssh_keys_found=0
+    local leaked_keys_found=0
+
+    # 1. Scan Authorized SSH Keys
+    echo -e "${C_BWHITE}--- Authorized Keys Scanner ---${C_RESET}"
+    printf "${C_BOLD}%-12s %-12s %-30s %-20s${C_RESET}\n" "ACCOUNT" "KEY TYPE" "KEY COMMENT/OWNER" "SOURCE FILE"
+    echo -e "${C_GRAY}----------------------------------------------------------------------------------${C_RESET}"
+
+    # Scan root
+    local root_auth="/root/.ssh/authorized_keys"
+    if [[ -f "$root_auth" ]]; then
+        while read -r line; do
+            [[ -z "$line" || "$line" == "#"* ]] && continue
+            ssh_keys_found=$((ssh_keys_found + 1))
+            
+            local key_type="Unknown"
+            local comment="No Comment"
+            
+            key_type=$(echo "$line" | awk '{print $1}')
+            if [[ "$key_type" == *"="* ]]; then
+                key_type=$(echo "$line" | awk '{print $2}')
+                comment=$(echo "$line" | cut -d' ' -f3-)
+            else
+                comment=$(echo "$line" | cut -d' ' -f3-)
+            fi
+            
+            printf "${C_BYELLOW}%-12s %-12s %-30s %-20s${C_RESET}\n" \
+                "root" "$key_type" "${comment:0:29}" "root/authorized_keys"
+        done < "$root_auth"
+    fi
+
+    # Scan regular users
+    if [[ -d "/home" ]]; then
+        while read -r user_dir; do
+            [[ ! -d "$user_dir" ]] && continue
+            local u
+            u=$(basename "$user_dir")
+            local auth_file="${user_dir}/.ssh/authorized_keys"
+            
+            if [[ -f "$auth_file" ]]; then
+                while read -r line; do
+                    [[ -z "$line" || "$line" == "#"* ]] && continue
+                    ssh_keys_found=$((ssh_keys_found + 1))
+                    
+                    local key_type="Unknown"
+                    local comment="No Comment"
+                    
+                    key_type=$(echo "$line" | awk '{print $1}')
+                    if [[ "$key_type" == *"="* ]]; then
+                        key_type=$(echo "$line" | awk '{print $2}')
+                        comment=$(echo "$line" | cut -d' ' -f3-)
+                    else
+                        comment=$(echo "$line" | cut -d' ' -f3-)
+                    fi
+                    
+                    printf "%-12s %-12s %-30s %-20s\n" \
+                        "$u" "$key_type" "${comment:0:29}" "~${u}/authorized_keys"
+                done < "$auth_file"
+            fi
+        done < <(find /home -maxdepth 1 -mindepth 1 -type d 2>/dev/null)
+    fi
+
+    echo -e "${C_GRAY}----------------------------------------------------------------------------------${C_RESET}"
+    print_status "info" "Total authorized SSH keys audited: $ssh_keys_found"
+
+    # 2. Scan for exposed private SSH keys
+    echo -e "\n${C_BWHITE}--- Exposed Private SSH Key Hunter ---${C_RESET}"
+    print_status "info" "Searching home directories and /root for private keys left in plaintext..."
+
+    local headers=("BEGIN OPENSSH PRIVATE KEY" "BEGIN RSA PRIVATE KEY" "BEGIN EC PRIVATE KEY" "BEGIN DSA PRIVATE KEY" "BEGIN PRIVATE KEY")
+    
+    for scan_dir in "/root" "/home"; do
+        if [[ ! -d "$scan_dir" ]]; then
+            continue
+        fi
+
+        while read -r file_path; do
+            [[ -z "$file_path" || ! -f "$file_path" || ! -r "$file_path" ]] && continue
+            
+            if [[ "$file_path" == *"/.git/"* || "$file_path" == *"/.cache/"* || "$file_path" == *"/node_modules/"* ]]; then
+                continue
+            fi
+
+            local first_line
+            first_line=$(head -n 1 "$file_path" 2>/dev/null)
+            
+            for h in "${headers[@]}"; do
+                if [[ "$first_line" == *"$h"* ]]; then
+                    leaked_keys_found=$((leaked_keys_found + 1))
+                    log_message "WARNING" "Exposed private key found: $file_path"
+                    
+                    local owner perms
+                    owner=$(stat -c "%U:%G" "$file_path" 2>/dev/null)
+                    perms=$(stat -c "%a" "$file_path" 2>/dev/null)
+                    
+                    print_status "danger" "Exposed Private Key File: $file_path"
+                    print_status "bullet" "Owner: $owner | Permissions: $perms (Recommended: 600 or delete!)"
+                    break
+                fi
+            done
+        done < <(find "$scan_dir" -maxdepth 4 -type f -size -100k 2>/dev/null)
+    done
+
+    if [[ "$leaked_keys_found" -eq 0 ]]; then
+        print_status "success" "No exposed private SSH keys identified in standard locations."
+    else
+        print_status "warn" "Found $leaked_keys_found exposed private key(s). Secure these immediately!"
+    fi
+}
+
+
+# ======================================================================
+# MODULE: TOOL AUTO-UPDATER
+# ======================================================================
+
+update_tool() {
+    print_status "step" "Updating Linux Server Security Toolkit..."
+    log_message "INFO" "Initiating tool auto-update."
+
+    # Verify if we are inside a Git repository
+    if git rev-parse --is-inside-work-tree &>/dev/null; then
+        print_status "info" "Detected Git repository. Running fetch and reset..."
+        
+        git fetch --all 2>&1
+        if git reset --hard origin/main 2>&1; then
+            chmod +x sec.sh
+            print_status "success" "Tool updated successfully via Git!"
+            log_message "INFO" "Tool updated via Git."
+            print_status "info" "Reloading tool process..."
+            sleep 1.5
+            exec bash "$0"
+        else
+            print_status "danger" "Git update failed! Please check your network or git configuration."
+            press_any_key
+        fi
+    else
+        print_status "info" "Standalone installation detected. Downloading fresh copy from GitHub..."
+        
+        local tmp_file="/tmp/sec_new.sh"
+        if command -v wget &>/dev/null; then
+            wget -q -O "$tmp_file" https://raw.githubusercontent.com/SAOSTAR1501/bash-security/main/sec.sh
+        elif command -v curl &>/dev/null; then
+            curl -s -o "$tmp_file" https://raw.githubusercontent.com/SAOSTAR1501/bash-security/main/sec.sh
+        else
+            print_status "danger" "Neither 'wget' nor 'curl' is installed. Cannot download updates."
+            press_any_key
+            return
+        fi
+
+        if [[ -f "$tmp_file" && -s "$tmp_file" ]]; then
+            if grep -q "LINUX SERVER SECURITY TOOLKIT" "$tmp_file"; then
+                mv "$tmp_file" "$0"
+                chmod +x "$0"
+                print_status "success" "Standalone tool updated successfully from GitHub!"
+                log_message "INFO" "Standalone tool updated from GitHub."
+                print_status "info" "Reloading tool process..."
+                sleep 1.5
+                exec bash "$0"
+            else
+                print_status "danger" "Downloaded file is corrupted or invalid! Update aborted."
+                rm -f "$tmp_file"
+                press_any_key
+            fi
+        else
+            print_status "danger" "Failed to download update file from GitHub!"
+            press_any_key
+        fi
+    fi
+}
+
+
+# ======================================================================
+# ENTRYPOINT & MENU
+# ======================================================================
+
+# Orchestrate all security scans
+run_full_scan() {
+    clear_screen
+    print_header
+    echo -e "${C_BWHITE}Running unified system security assessment. Please wait...${C_RESET}\n"
+    
+    display_system_info
+    check_cpu_processes
+    check_network_connections
+    check_globally_writeable
+    check_persistence
+    check_system_integrity
+    audit_system_users
+    audit_ssh_keys
+    
+    echo -e "\n${C_BCYAN}======================================================================${C_RESET}"
+    print_status "success" "Security assessment complete. Audit log written to: $LOG_FILE"
+    press_any_key
+}
+
+# Generate audit reports to disk
 generate_report() {
     local report_path="/tmp/security_toolkit_report.txt"
     print_status "step" "Generating audit text report..."
@@ -847,6 +1123,16 @@ generate_report() {
         echo "--- Library Injections (/etc/ld.so.preload) ---"
         cat /etc/ld.so.preload 2>/dev/null
         echo ""
+        echo "--- User Identity & Accounts ---"
+        while read -r line; do
+            local u uid shell
+            u=$(echo "$line" | cut -d':' -f1)
+            uid=$(echo "$line" | cut -d':' -f3)
+            shell=$(echo "$line" | cut -d':' -f7)
+            if [[ "$shell" == "/bin/bash" || "$shell" == "/bin/sh" || "$shell" == "/bin/zsh" ]]; then
+                echo "   Interactive User: $u (UID: $uid)"
+            fi
+        done < /etc/passwd
     } > "$report_path"
 
     log_message "INFO" "Generated report at $report_path"
@@ -855,66 +1141,7 @@ generate_report() {
     press_any_key
 }
 
-# --- TOOL UPDATE ENGINE ---
-update_tool() {
-    print_status "step" "Updating Linux Server Security Toolkit..."
-    log_message "INFO" "Initiating tool auto-update."
-
-    # Verify if we are inside a Git repository
-    if git rev-parse --is-inside-work-tree &>/dev/null; then
-        print_status "info" "Detected Git repository. Running fetch and reset..."
-        
-        # Pull updates safely
-        git fetch --all 2>&1
-        if git reset --hard origin/main 2>&1; then
-            chmod +x sec.sh
-            print_status "success" "Tool updated successfully via Git!"
-            log_message "INFO" "Tool updated via Git."
-            print_status "info" "Reloading tool process..."
-            sleep 1.5
-            exec bash "$0"
-        else
-            print_status "danger" "Git update failed! Please check your network or git configuration."
-            press_any_key
-        fi
-    else
-        # Standalone installation (downloaded via curl or wget)
-        print_status "info" "Standalone installation detected. Downloading fresh copy from GitHub..."
-        
-        local tmp_file="/tmp/sec_new.sh"
-        if command -v wget &>/dev/null; then
-            wget -q -O "$tmp_file" https://raw.githubusercontent.com/SAOSTAR1501/bash-security/main/sec.sh
-        elif command -v curl &>/dev/null; then
-            curl -s -o "$tmp_file" https://raw.githubusercontent.com/SAOSTAR1501/bash-security/main/sec.sh
-        else
-            print_status "danger" "Neither 'wget' nor 'curl' is installed. Cannot download updates."
-            press_any_key
-            return
-        fi
-
-        if [[ -f "$tmp_file" && -s "$tmp_file" ]]; then
-            # Verify downloaded script basic syntax/content
-            if grep -q "LINUX SERVER SECURITY TOOLKIT" "$tmp_file"; then
-                mv "$tmp_file" "$0"
-                chmod +x "$0"
-                print_status "success" "Standalone tool updated successfully from GitHub!"
-                log_message "INFO" "Standalone tool updated from GitHub."
-                print_status "info" "Reloading tool process..."
-                sleep 1.5
-                exec bash "$0"
-            else
-                print_status "danger" "Downloaded file is corrupted or invalid! Update aborted."
-                rm -f "$tmp_file"
-                press_any_key
-            fi
-        else
-            print_status "danger" "Failed to download update file from GitHub!"
-            press_any_key
-        fi
-    fi
-}
-
-# --- MAIN MENU ---
+# --- MAIN MENU CHOICE LOOP ---
 main_menu() {
     check_root
     
@@ -926,9 +1153,10 @@ main_menu() {
         echo -e " [3]  Inspect Network Connections & Stratum Pools"
         echo -e " [4]  Scan Temp Writable Folders (/tmp, /dev/shm) for Signatures"
         echo -e " [5]  Check System Persistence (Cron Jobs, Systemd Services)"
-        echo -e " [6]  Verify Rootkits & Preload Injections"
-        echo -e " [7]  Generate Comprehensive Text Audit Report"
-        echo -e " [8]  Update Tool (Reset & Pull from GitHub)"
+        echo -e " [6]  Verify Rootkits & ld.so.preload"
+        echo -e " [7]  Audit Identity Credentials & SSH Keys (Users / Keys / Leaks)"
+        echo -e " [8]  Generate Comprehensive Text Audit Report"
+        echo -e " [9]  Update Tool (Reset & Pull from GitHub)"
         echo -e " [0]  Exit Tool"
         echo -e "${C_CYAN}======================================================================${C_RESET}"
         echo -n "Select option: "
@@ -968,9 +1196,17 @@ main_menu() {
             7)
                 clear_screen
                 print_header
-                generate_report
+                audit_system_users
+                echo ""
+                audit_ssh_keys
+                press_any_key
                 ;;
             8)
+                clear_screen
+                print_header
+                generate_report
+                ;;
+            9)
                 clear_screen
                 print_header
                 update_tool
@@ -981,7 +1217,7 @@ main_menu() {
                 exit 0
                 ;;
             *)
-                print_status "danger" "Invalid choice. Please select 0-8."
+                print_status "danger" "Invalid choice. Please select 0-9."
                 sleep 1
                 ;;
         esac
