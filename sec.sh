@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ======================================================================
 #          LINUX SERVER SECURITY TOOLKIT (Miner & Malware Scanner)
-#                 Compiled production build: 2026-06-01 11:26:09
+#                 Compiled production build: 2026-06-01 11:35:19
 #                 Source Architecture: MVC Modular / Domain-Driven
 # ======================================================================
 set -o pipefail
@@ -899,7 +899,8 @@ check_ports_firewall() {
                 echo -e "$containers"
                 
                 local dangerous_bindings=0
-                docker ps --format "{{.Names}} {{.Ports}}" 2>/dev/null | while read -r name ports; do
+                while read -r name ports; do
+                    if [[ -z "$name" ]]; then continue; fi
                     if echo "$ports" | grep -qE "0.0.0.0:(3306|5432|5433|6379|27017|9200|8080|22)->"; then
                         local bound_port
                         bound_port=$(echo "$ports" | grep -o -E "0.0.0.0:[0-9]+" | cut -d':' -f2)
@@ -910,19 +911,38 @@ check_ports_firewall() {
                         print_status "bullet" "CRITICAL RATIONALE: Docker automatically writes raw iptables rules."
                         print_status "bullet" "Even if UFW status is ACTIVE, Docker's rules bypass UFW completely!"
                     fi
-                done
+                done < <(docker ps --format "{{.Names}} {{.Ports}}" 2>/dev/null)
                 
                 if [[ "$dangerous_bindings" -eq 0 ]]; then
                     print_status "success" "All running Docker container ports are bound securely or do not expose sensitive DB services publicly."
+                    echo -e ""
+                    print_status "info" "Would you like to open the Docker Port Hardening Wizard to review or block other ports?"
+                    echo -n "Launch Hardening Wizard? [y/N]: "
+                    read -r launch_choice
+                    if [[ "$launch_choice" == "y" || "$launch_choice" == "Y" ]]; then
+                        remediate_docker_ports
+                    fi
                 else
-                    print_status "warn" "Exposed ports identified! Recommendation: Sửa file docker-compose.yml"
-                    print_status "bullet" "Thay đổi '- p 3306:3306' thành '- p 127.0.0.1:3306:3306' rồi restart container."
+                    print_status "danger" "CRITICAL: Publicly exposed database ports detected on running containers!"
+                    print_status "warn" "Recommendation: Sửa file docker-compose.yml (e.g. bind to 127.0.0.1)."
                     
-                    # Trigger interactive SOAR wizard!
-                    remediate_docker_ports
+                    echo -e ""
+                    print_status "warn" "Do you want to run the Docker Port Hardening Wizard now to block these ports immediately?"
+                    echo -n "Block exposed ports now? [Y/n]: "
+                    read -r launch_choice
+                    if [[ "$launch_choice" != "n" && "$launch_choice" != "N" ]]; then
+                        remediate_docker_ports
+                    fi
                 fi
             else
                 print_status "info" "Docker daemon is active but no containers are currently running."
+                echo -e ""
+                print_status "info" "Would you like to run the Docker Port Hardening Wizard to block all incoming public Docker traffic anyway?"
+                echo -n "Launch Hardening Wizard? [y/N]: "
+                read -r launch_choice
+                if [[ "$launch_choice" == "y" || "$launch_choice" == "Y" ]]; then
+                    remediate_docker_ports
+                fi
             fi
         else
             print_status "info" "Docker service is installed but not running."
