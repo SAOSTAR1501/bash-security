@@ -24,56 +24,71 @@ run_full_scan() {
     press_any_key
 }
 
-# Generate audit reports to disk
+# Generate comprehensive audit reports to disk
 generate_report() {
-    local report_path="/tmp/security_toolkit_report.txt"
-    print_status "step" "Generating audit text report..."
+    local report_dir="/var/log/sec-toolkit"
+    mkdir -p "$report_dir" 2>/dev/null
+    local report_path="${report_dir}/audit_report_$(date +%Y%m%d_%H%M%S).txt"
     
+    clear_screen
+    print_header
+    echo -e "${C_BWHITE}>>> GENERATING COMPREHENSIVE TEXT AUDIT REPORT <<<${C_RESET}\n"
+    print_status "step" "Executing full security suite in background, capturing output..."
+    print_status "info" "This will run all audits (CPU, ports, firewall, writable paths, integrity, users, cron, ssh leaks) and save a clean, color-stripped report."
+    echo -e ""
+
     {
         echo "======================================================================"
-        echo "           LINUX SERVER SECURITY TOOLKIT - AUDIT REPORT"
+        echo "           LINUX SERVER SECURITY TOOLKIT - FULL AUDIT REPORT"
         echo "           Generated at: $(date "+%Y-%m-%d %H:%M:%S")"
+        echo "           Hostname: $(hostname 2>/dev/null)"
+        echo "           Public IP: $(curl -s --max-time 1.5 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')"
         echo "======================================================================"
         echo ""
-        echo "--- Host Information ---"
-        echo "Hostname: $(hostname)"
-        echo "Kernel: $(uname -r)"
-        echo "Uptime: $(uptime -p)"
-        echo ""
-        echo "--- High Resource / Suspicious Processes ---"
-        ps -eo pid,user,%cpu,%mem,comm --sort=-%cpu | head -n 20
-        echo ""
-        echo "--- Active Outbound Network Connections ---"
-        if command -v ss &>/dev/null; then
-            ss -tupn state established 2>/dev/null
-        else
-            netstat -nap 2>/dev/null | grep ESTABLISHED
-        fi
-        echo ""
-        echo "--- Persistence Check ---"
-        echo "* Systemd units:"
-        find /etc/systemd/system/ -name "*.service" -exec grep -H "ExecStart" {} \; 2>/dev/null
-        echo "* System Crontab:"
-        cat /etc/crontab 2>/dev/null
-        echo ""
-        echo "--- Library Injections (/etc/ld.so.preload) ---"
-        cat /etc/ld.so.preload 2>/dev/null
-        echo ""
-        echo "--- User Identity & Accounts ---"
-        while read -r line; do
-            local u uid shell
-            u=$(echo "$line" | cut -d':' -f1)
-            uid=$(echo "$line" | cut -d':' -f3)
-            shell=$(echo "$line" | cut -d':' -f7)
-            if [[ "$shell" == "/bin/bash" || "$shell" == "/bin/sh" || "$shell" == "/bin/zsh" ]]; then
-                echo "   Interactive User: $u (UID: $uid)"
-            fi
-        done < /etc/passwd
-    } > "$report_path"
 
-    log_message "INFO" "Generated report at $report_path"
-    print_status "success" "Report generated successfully at: $report_path"
-    print_status "info" "You can download or view this file for detailed offline audits."
+        display_system_info
+        echo ""
+        check_cpu_processes
+        echo ""
+        check_network_connections
+        echo ""
+        check_ports_firewall
+        echo ""
+        check_globally_writeable
+        echo ""
+        check_persistence
+        echo ""
+        check_system_integrity
+        echo ""
+        audit_system_users
+        echo ""
+        audit_ssh_keys
+        echo ""
+        
+        echo "======================================================================"
+        echo "           END OF REPORT - LINUX SERVER SECURITY TOOLKIT"
+        echo "======================================================================"
+    } | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGKB]//g" > "$report_path"
+
+    # Create convenient persistent symlink to the latest report
+    ln -sf "$report_path" "/var/log/security_toolkit_report.txt" 2>/dev/null
+    
+    # Calculate file size
+    local file_size="0 B"
+    if [[ -f "$report_path" ]]; then
+        file_size=$(stat -c "%s" "$report_path" 2>/dev/null | awk '{ split("B KB MB GB", v); s=1; while($1>1024){$1/=1024; s++} printf "%.1f %s", $1, v[s] }')
+    fi
+
+    log_message "INFO" "Generated full audit report at $report_path ($file_size)"
+    
+    print_status "success" "COMPREHENSIVE AUDIT REPORT GENERATED SUCCESSFULLY!"
+    print_status "bullet" "Report Location : ${C_CYAN}${report_path}${C_RESET}"
+    print_status "bullet" "Latest Symlink  : ${C_CYAN}/var/log/security_toolkit_report.txt${C_RESET}"
+    print_status "bullet" "Report Size     : ${C_BWHITE}${file_size}${C_RESET}"
+    echo -e ""
+    print_status "info" "You can open or download this file to audit system logs offline."
+    print_status "info" "Command to view: ${C_CYAN}cat /var/log/security_toolkit_report.txt${C_RESET}"
+    
     press_any_key
 }
 

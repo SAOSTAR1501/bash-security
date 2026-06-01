@@ -113,6 +113,48 @@ run_cron_scan() {
     done
     local log_tag="🟢 Intact"
     [[ "$log_tampered" -eq 1 ]] && log_tag="🔴 TAMPERED! ⚠️"
+
+    # Fast Sudoers NOPASSWD backdoor check
+    local sudo_count=0
+    local sudo_list=""
+    if [[ -f "/etc/sudoers" ]]; then
+        while read -r line; do
+            [[ -z "$line" || "$line" == "#"* ]] && continue
+            if echo "$line" | grep -q "NOPASSWD"; then
+                sudo_count=$((sudo_count + 1))
+                sudo_list+="  ⚠️ Sudoers: NOPASSWD in \`/etc/sudoers\` -> \`$line\`${BR}"
+            fi
+        done < "/etc/sudoers"
+    fi
+    if [[ -d "/etc/sudoers.d" ]]; then
+        for f in /etc/sudoers.d/*; do
+            [[ ! -f "$f" ]] && continue
+            while read -r line; do
+                [[ -z "$line" || "$line" == "#"* ]] && continue
+                if echo "$line" | grep -q "NOPASSWD"; then
+                    sudo_count=$((sudo_count + 1))
+                    sudo_list+="  ⚠️ Sudoers: NOPASSWD in \`$(basename "$f")\` -> \`$line\`${BR}"
+                fi
+            done < "$f"
+        done
+    fi
+    local sudo_tag="🟢 Secure (No NOPASSWD)"
+    [[ "$sudo_count" -gt 0 ]] && sudo_tag="🔴 $sudo_count DETECTED! ⚠️"
+
+    # Fast SSH Brute Force failed logins check
+    local failed_logins=0
+    local failed_ips=""
+    local auth_l=""
+    [[ -f "/var/log/auth.log" ]] && auth_l="/var/log/auth.log"
+    [[ -f "/var/log/secure" ]] && auth_l="/var/log/secure"
+    if [[ -n "$auth_l" ]]; then
+        failed_logins=$(grep -i "failed password" "$auth_l" 2>/dev/null | wc -l)
+        if [[ "$failed_logins" -gt 0 ]]; then
+            failed_ips=$(grep -i "failed password" "$auth_l" 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | sort | uniq -c | sort -nr | head -n 3 | awk '{print "    * IP: " $2 " - " $1 " attempts"}' | tr '\n' ',' | sed 's/,$//' | sed 's/,/<br>/g')
+        fi
+    fi
+    local ssh_bf_tag="🟢 Clean (0 failed)"
+    [[ "$failed_logins" -gt 0 ]] && ssh_bf_tag="🔴 $failed_logins attacks! ⚠️"
     
     local logged_users
     logged_users=$(who 2>/dev/null | awk '{print $1" ("$2" "$5")"}' | tr '\n' ',' | sed 's/,$//')
@@ -124,6 +166,8 @@ run_cron_scan() {
     audit_text+="├─ SSH Permit Root Login: $ssh_root_tag${BR}"
     audit_text+="├─ Log Integrity Status : $log_tag${BR}"
     audit_text+="├─ SUID Backdoors Temp  : $suid_tag${BR}"
+    audit_text+="├─ Sudoers Privilege    : $sudo_tag${BR}"
+    audit_text+="├─ SSH Brute Force      : $ssh_bf_tag${BR}"
     audit_text+="└─ Active Logged-in Users: \`$logged_users\`${BR}${BR}"
     
     # 3. Docker Running Containers & Resources
@@ -209,6 +253,12 @@ run_cron_scan() {
     if [[ -n "$log_anomalies_list" ]]; then
         audit_text+="**🚨 SYSTEM LOG INTEGRITY VIOLATIONS (TAMPERING):**${BR}$log_anomalies_list${BR}"
     fi
+    if [[ "$failed_logins" -gt 0 ]]; then
+        audit_text+="**🌐 SSH BRUTE FORCE ATTACK ANALYSIS:**${BR}$failed_ips${BR}${BR}"
+    fi
+    if [[ -n "$sudo_list" ]]; then
+        audit_text+="**🚨 CRITICAL SUDOERS PRIVILEGE BACKDOORS:**${BR}$sudo_list${BR}"
+    fi
     
     # 4. Top 5 CPU Processes
     local susp_proc=""
@@ -257,7 +307,7 @@ run_cron_scan() {
     local alert_level="success"
     local alert_title="Daily Server Health: ALL SYSTEMS NORMAL"
     
-    if [[ -n "$socket_mounts" || -n "$dangerous_ports" || -n "$stratum_conns" || "$suid_count" -gt 0 || "$log_tampered" -eq 1 ]]; then
+    if [[ -n "$socket_mounts" || -n "$dangerous_ports" || -n "$stratum_conns" || "$suid_count" -gt 0 || "$log_tampered" -eq 1 || "$sudo_count" -gt 0 || "$failed_logins" -gt 15 ]]; then
         alert_level="danger"
         alert_title="VPS SECURITY ALERT: Critical Threats Detected!"
     elif [[ -n "$susp_proc" && "$susp_proc" == *"🔥 [SUSPICIOUS]"* ]]; then

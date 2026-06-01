@@ -106,3 +106,49 @@ check_system_integrity() {
     if [[ "$suid_files" -eq 0 ]]; then
         print_status "success" "No SUID/SGID privilege escalation backdoors found in temporary directories."
     fi
+
+    # 5. Check DNS Configuration Tampering
+    echo -e "\n${C_BWHITE}--- Auditing DNS Configurations (/etc/resolv.conf) ---${C_RESET}"
+    if [[ -f "/etc/resolv.conf" ]]; then
+        local nameservers=()
+        while read -r line; do
+            if [[ "$line" == "nameserver "* ]]; then
+                local ns
+                ns=$(echo "$line" | awk '{print $2}')
+                nameservers+=("$ns")
+            fi
+        done < "/etc/resolv.conf"
+        
+        if [[ "${#nameservers[@]}" -gt 0 ]]; then
+            print_status "info" "Configured system DNS Nameservers:"
+            for ns in "${nameservers[@]}"; do
+                print_status "bullet" "Nameserver IP: \`$ns\`"
+            done
+        else
+            print_status "warn" "No DNS nameservers configured in '/etc/resolv.conf'."
+        fi
+    else
+        print_status "danger" "DNS configuration file '/etc/resolv.conf' is completely MISSING!"
+    fi
+
+    # 6. Check Hosts File Static Mapping Tampering
+    echo -e "\n${C_BWHITE}--- Auditing Hosts Static Mappings (/etc/hosts) ---${C_RESET}"
+    if [[ -f "/etc/hosts" ]]; then
+        local hosts_tampered=0
+        while read -r line; do
+            [[ -z "$line" || "$line" == "#"* ]] && continue
+            # Look for static mappings of sensitive domains (github, google, lark, update services)
+            if echo "$line" | grep -qE "github|google|lark|feishu|microsoft|apple|api|raw.githubusercontent.com"; then
+                hosts_tampered=$((hosts_tampered + 1))
+                print_status "danger" "SUSPICIOUS STATIC MAPPING IN HOSTS FILE: $line"
+                print_status "bullet" "CRITICAL: Attackers map public update sites or APIs to loopback/local IPs to block patches or hijack API requests!"
+                log_message "ALERT" "Suspicious hosts mapping: $line"
+            fi
+        done < "/etc/hosts"
+        
+        if [[ "$hosts_tampered" -eq 0 ]]; then
+            print_status "success" "Static hosts mapping file '/etc/hosts' is clean."
+        fi
+    else
+        print_status "danger" "Hosts static mapping file '/etc/hosts' is completely MISSING!"
+    fi
