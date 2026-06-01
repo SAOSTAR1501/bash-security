@@ -151,7 +151,25 @@ run_cron_scan() {
     if [[ -n "$auth_l" ]]; then
         failed_logins=$(grep -i "failed password" "$auth_l" 2>/dev/null | wc -l)
         if [[ "$failed_logins" -gt 0 ]]; then
-            failed_ips=$(grep -i "failed password" "$auth_l" 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | sort | uniq -c | sort -nr | head -n 3 | awk '{print "    * IP: " $2 " - " $1 " attempts"}' | tr '\n' ',' | sed 's/,$//' | sed 's/,/<br>/g')
+            # Parse top 3 attacking IPs and dynamically label them if already firewall-blocked
+            local temp_failed_ips=""
+            while read -r count ip; do
+                if [[ -n "$ip" ]]; then
+                    local block_label=""
+                    # Check firewall status of this IP
+                    if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+                        if ufw status numbered 2>/dev/null | grep -Fq "$ip"; then
+                            block_label=" 🛡️ [BLOCKED]"
+                        fi
+                    else
+                        if iptables -S 2>/dev/null | grep -Fq "$ip"; then
+                            block_label=" 🛡️ [BLOCKED]"
+                        fi
+                    fi
+                    temp_failed_ips+="    * IP: ${ip} - ${count} attempts${block_label}${BR}"
+                fi
+            done < <(grep -i "failed password" "$auth_l" 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | sort | uniq -c | sort -nr | head -n 3)
+            failed_ips=$(echo "$temp_failed_ips" | sed 's/<br>$//')
             
             # --- ACTIVE SOAR: SSH Brute-Force Autoblocking ---
             while read -r count ip; do
