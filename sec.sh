@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ======================================================================
 #          LINUX SERVER SECURITY TOOLKIT (Miner & Malware Scanner)
-#                 Compiled production build: 2026-06-01 11:19:21
+#                 Compiled production build: 2026-06-01 11:26:09
 #                 Source Architecture: MVC Modular / Domain-Driven
 # ======================================================================
 set -o pipefail
@@ -308,7 +308,7 @@ check_cpu_processes() {
     echo -e "${C_GRAY}----------------------------------------------------------------------------------------------------${C_RESET}"
     if [[ "$suspects_found" -gt 0 ]]; then
         print_status "danger" "Found $suspects_found highly suspicious process(es). Recommended actions:"
-        print_status "bullet" "Use menu option [2] to Freeze/Investigate them."
+        print_status "bullet" "Use menu option [3] to Freeze/Investigate them."
     else
         print_status "success" "No highly suspicious processes detected using standard signatures."
     fi
@@ -1502,17 +1502,24 @@ main_menu() {
     while true; do
         banner
         print_header
-        echo -e " [1]  Run Full System Security Scan (Unified Report)"
-        echo -e " [2]  Deep Process Investigator (Freeze / Analyze / Kill)"
-        echo -e " [3]  Inspect Network Connections & Stratum Pools"
-        echo -e " [4]  Scan Ports, UFW Firewall & Docker Exposures"
-        echo -e " [5]  Scan Temp Writable Folders (/tmp, /dev/shm) for Signatures"
-        echo -e " [6]  Check System Persistence (Cron Jobs, Systemd Services)"
-        echo -e " [7]  Verify Rootkits & ld.so.preload"
-        echo -e " [8]  Audit Identity Credentials & SSH Keys (Users / Keys / Leaks)"
-        echo -e " [9]  Generate Comprehensive Text Audit Report"
-        echo -e " [10] Update Tool (Reset & Pull from GitHub)"
-        echo -e " [0]  Exit Tool"
+        echo -e "${C_BMAGENTA}  -- SYSTEM OVERVIEW & REPORTING --${C_RESET}"
+        echo -e "   [1]  Run Full System Security Scan (Unified Live Audit)"
+        echo -e "   [2]  Generate Comprehensive Text Audit Report (Save to file)"
+        echo -e ""
+        echo -e "${C_BRED}  -- ACTIVE THREAT REMEDIATION (SOAR) --${C_RESET}"
+        echo -e "   [3]  Deep Process Investigator & Host Container Destroyer"
+        echo -e "   [4]  Audit Ports, UFW & Docker Firewall Hardening Wizard"
+        echo -e ""
+        echo -e "${C_BYELLOW}  -- DEEP AUDITING & FORENSICS --${C_RESET}"
+        echo -e "   [5]  Inspect Network Connections & Outbound Stratum Pools"
+        echo -e "   [6]  Scan Globally Writable Paths (/tmp, /dev/shm) for Payloads"
+        echo -e "   [7]  Audit Persistence Mechanisms (Cron Jobs, Systemd Units)"
+        echo -e "   [8]  Verify Library Injections (Rootkits / ld.so.preload)"
+        echo -e "   [9]  Audit Identity Credentials, Users & SSH Key Leaks"
+        echo -e ""
+        echo -e "${C_BCYAN}  -- TOOL MAINTENANCE --${C_RESET}"
+        echo -e "   [10] Check & Update Security Toolkit (Git Pull)"
+        echo -e "   [0]  Exit Security Toolkit"
         echo -e "${C_CYAN}======================================================================${C_RESET}"
         echo -n "Select option: "
         read -r main_choice
@@ -1522,13 +1529,12 @@ main_menu() {
                 run_full_scan
                 ;;
             2)
-                process_investigator
-                ;;
-            3)
                 clear_screen
                 print_header
-                check_network_connections
-                press_any_key
+                generate_report
+                ;;
+            3)
+                process_investigator
                 ;;
             4)
                 clear_screen
@@ -1539,33 +1545,34 @@ main_menu() {
             5)
                 clear_screen
                 print_header
-                check_globally_writeable
+                check_network_connections
                 press_any_key
                 ;;
             6)
                 clear_screen
                 print_header
-                check_persistence
+                check_globally_writeable
                 press_any_key
                 ;;
             7)
                 clear_screen
                 print_header
-                check_system_integrity
+                check_persistence
                 press_any_key
                 ;;
             8)
+                clear_screen
+                print_header
+                check_system_integrity
+                press_any_key
+                ;;
+            9)
                 clear_screen
                 print_header
                 audit_system_users
                 echo ""
                 audit_ssh_keys
                 press_any_key
-                ;;
-            9)
-                clear_screen
-                print_header
-                generate_report
                 ;;
             10)
                 clear_screen

@@ -130,7 +130,7 @@ check_cpu_processes() {
     echo -e "${C_GRAY}----------------------------------------------------------------------------------------------------${C_RESET}"
     if [[ "$suspects_found" -gt 0 ]]; then
         print_status "danger" "Found $suspects_found highly suspicious process(es). Recommended actions:"
-        print_status "bullet" "Use menu option [2] to Freeze/Investigate them."
+        print_status "bullet" "Use menu option [3] to Freeze/Investigate them."
     else
         print_status "success" "No highly suspicious processes detected using standard signatures."
     fi
