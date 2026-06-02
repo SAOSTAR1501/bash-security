@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ======================================================================
-#          LINUX SERVER SECURITY TOOLKIT (Miner & Malware Scanner)
+#          STAR SECURITY (Miner & Malware Scanner)
 # ======================================================================
 # Dynamic MVC modular architecture entrypoint.
 # ======================================================================

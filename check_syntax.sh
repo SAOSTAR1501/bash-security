@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ======================================================================
-#          LINUX SERVER SECURITY TOOLKIT - SYNTAX CHECKER
+#          STAR SECURITY - SYNTAX CHECKER
 # ======================================================================
 # Performs non-execution syntax check (bash -n) on all shell scripts.
 # Exit code 0 if all clean, 1 if any syntax errors detected.

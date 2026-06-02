@@ -167,7 +167,7 @@ class ChatOpsHandler(BaseHTTPRequestHandler):
         <div class="badge">{status_type}</div>
         <div class="message-box">{message}</div>
         <button class="btn" onclick="window.close();">Close Window</button>
-        <div class="footer">Linux Server Security Toolkit • Active SOAR Gateway</div>
+        <div class="footer">Star Security • Active SOAR Gateway</div>
     </div>
 </body>
 </html>

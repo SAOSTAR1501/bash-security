@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ======================================================================
-#          LINUX SERVER SECURITY TOOLKIT - GIT HOOK INSTALLER
+#          STAR SECURITY - GIT HOOK INSTALLER
 # ======================================================================
 # Installs check_syntax.sh as Git pre-commit and pre-push hooks.
 # ======================================================================

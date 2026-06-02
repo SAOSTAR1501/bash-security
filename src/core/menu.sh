@@ -39,7 +39,7 @@ generate_report() {
 
     {
         echo "======================================================================"
-        echo "           LINUX SERVER SECURITY TOOLKIT - FULL AUDIT REPORT"
+        echo "           STAR SECURITY - FULL AUDIT REPORT"
         echo "           Generated at: $(date "+%Y-%m-%d %H:%M:%S")"
         echo "           Hostname: $(hostname 2>/dev/null)"
         echo "           Public IP: $(curl -s --max-time 1.5 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')"
@@ -66,7 +66,7 @@ generate_report() {
         echo ""
         
         echo "======================================================================"
-        echo "           END OF REPORT - LINUX SERVER SECURITY TOOLKIT"
+        echo "           END OF REPORT - STAR SECURITY"
         echo "======================================================================"
     } | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGKB]//g" > "$report_path"
 
@@ -97,7 +97,7 @@ main_menu() {
     check_root
     
     if [[ "${SHOW_UPDATE_SUCCESS:-0}" -eq 1 ]]; then
-        print_status "success" "Security Toolkit successfully updated to the latest version!"
+        print_status "success" "Star Security successfully updated to the latest version!"
         SHOW_UPDATE_SUCCESS=0
         sleep 2
     fi
@@ -131,8 +131,8 @@ main_menu() {
         echo -e ""
         echo -e "${C_BCYAN}  -- TOOL CONFIGURATION & MAINTENANCE --${C_RESET}"
         echo -e "   [11] Configure Security Notifications & Automated Audits"
-        echo -e "   [12] Check & Update Security Toolkit (Git Pull)"
-        echo -e "   [0]  Exit Security Toolkit"
+        echo -e "   [12] Check & Update Star Security (Git Pull)"
+        echo -e "   [0]  Exit Star Security"
         echo -e "${C_CYAN}======================================================================${C_RESET}"
         echo -n "Select option: "
         read -r main_choice
@@ -199,8 +199,8 @@ main_menu() {
                 update_tool
                 ;;
             0)
-                echo -e "\n${C_BGREEN}[+] Thank you for using Linux Server Security Toolkit. Stay secure!${C_RESET}"
-                log_message "INFO" "Security Toolkit closed."
+                echo -e "\n${C_BGREEN}[+] Thank you for using Star Security. Stay secure!${C_RESET}"
+                log_message "INFO" "Star Security closed."
                 exit 0
                 ;;
             *)

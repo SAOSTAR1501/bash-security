@@ -125,7 +125,7 @@ card = {
                 "elements": [
                     {
                         "tag": "plain_text",
-                        "content": "💡 Linux Server Security Toolkit - Miner & Malware Scanner"
+                        "content": "💡 Star Security - Miner & Malware Scanner"
                     }
                 ]
             }
@@ -167,7 +167,7 @@ print(json.dumps(card))
                                 { tag: "hr" },
                                 { tag: "div", text: { tag: "lark_md", content: $text } },
                                 { tag: "hr" },
-                                { tag: "note", elements: [{ tag: "plain_text", content: "💡 Linux Server Security Toolkit" }] }
+                                { tag: "note", elements: [{ tag: "plain_text", content: "💡 Star Security" }] }
                             ]
                         }
                     }')

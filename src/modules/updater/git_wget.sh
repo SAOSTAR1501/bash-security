@@ -3,7 +3,7 @@
 # ======================================================================
 
 update_tool() {
-    print_status "step" "Updating Linux Server Security Toolkit..."
+    print_status "step" "Updating Star Security..."
     log_message "INFO" "Initiating tool auto-update."
 
     # Verify if we are inside a Git repository
@@ -33,7 +33,7 @@ update_tool() {
         fi
 
         if [[ -f "$tmp_file" && -s "$tmp_file" ]]; then
-            if grep -q "LINUX SERVER SECURITY TOOLKIT" "$tmp_file"; then
+            if grep -q "STAR SECURITY" "$tmp_file"; then
                 mv "$tmp_file" "$0"
                 chmod +x "$0"
                 # Exec immediately to prevent bash lazy-reading corruption of the running script

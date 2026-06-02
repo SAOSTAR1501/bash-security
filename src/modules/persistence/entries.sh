@@ -49,7 +49,7 @@ check_persistence() {
             # Skip empty lines and comments
             [[ -z "$line" || "$line" =~ ^\s*# ]] && continue
             
-            # Check if it is the Security Toolkit cron job
+            # Check if it is the Star Security cron job
             if echo "$line" | grep -qE "(main\.sh|sec\.sh) --cron"; then
                 sec_cron_active=1
                 sec_cron_details="$line"
@@ -85,9 +85,9 @@ check_persistence() {
         fi
     done
 
-    # Report if Security Toolkit Cron Job is Active
+    # Report if Star Security Cron Job is Active
     if [[ "$sec_cron_active" -eq 1 ]]; then
-        print_status "success" "Security Toolkit Automated Scan Cronjob is ACTIVE!"
+        print_status "success" "Star Security Automated Scan Cronjob is ACTIVE!"
         print_status "bullet" "Cron Entry: $sec_cron_details"
     fi
 

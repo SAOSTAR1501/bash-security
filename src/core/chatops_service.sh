@@ -22,7 +22,7 @@ install_chatops_service() {
     
     cat <<EOF > "$service_file" 2>/dev/null
 [Unit]
-Description=Linux Server Security Toolkit - Lark ChatOps Webhook Daemon
+Description=Star Security - Lark ChatOps Webhook Daemon
 After=network.target
 
 [Service]
